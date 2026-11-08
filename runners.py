@@ -31,13 +31,10 @@ CLAUDE_READ_ONLY_TOOLS = [
     "Skill",                  # playbooks like world-bible-keeper (installed by the app)
     "WebSearch",
     "WebFetch",
-    "mcp__claude_ai_Google_Drive__search_files",
-    "mcp__claude_ai_Google_Drive__read_file_content",
-    "mcp__claude_ai_Google_Drive__get_file_metadata",
-    "mcp__claude_ai_Google_Drive__list_recent_files",
-    "mcp__claude_ai_Google_Drive__download_file_content",
-    "mcp__claude_ai_Google_Drive__list_shared_drives",
-    "mcp__claude_ai_Google_Docs__read_doc",
+    # Whole Drive and Docs connectors (so renamed or new read tools still work). Their edit
+    # tools are blocked separately unless "Allow doc edits" is on, and trash/share always are.
+    "mcp__claude_ai_Google_Drive",
+    "mcp__claude_ai_Google_Docs",
 ]
 
 # Added only when "Allow doc edits" is on for the chat.
@@ -47,6 +44,7 @@ CLAUDE_DOC_EDIT_TOOLS = [
     "mcp__claude_ai_Google_Drive__create_file",
     "mcp__claude_ai_Google_Drive__copy_file",
     "mcp__claude_ai_Google_Drive__add_comment_reply",
+    "mcp__claude_ai_Google_Drive__resolve_comment_thread",
 ]
 
 # Never allowed, even with doc edits on.
@@ -54,6 +52,7 @@ CLAUDE_BLOCKED_TOOLS = [
     "Bash", "PowerShell", "Edit", "Write", "NotebookEdit",
     "mcp__claude_ai_Google_Drive__trash_file",
     "mcp__claude_ai_Google_Drive__share_file",
+    "mcp__claude_ai_Google_Drive__request_access",
 ]
 
 # Coding area: Claude may edit files, but only inside the project's code folder (Claude Code's
@@ -63,6 +62,7 @@ CLAUDE_CODE_BLOCKED_TOOLS = [
     "Bash", "PowerShell",
     "mcp__claude_ai_Google_Drive__trash_file",
     "mcp__claude_ai_Google_Drive__share_file",
+    "mcp__claude_ai_Google_Drive__request_access",
 ]
 
 TURN_TIMEOUT_SECONDS = 600  # give up on a single reply after 10 minutes
@@ -333,6 +333,13 @@ class Runner:
                 except OSError:
                     pass
 
+    def _env(self):
+        env = clean_env()
+        if self.key == "claude":
+            # Give the claude.ai connectors (Drive, Docs) time to connect before Claude starts.
+            env.setdefault("MCP_TIMEOUT", "30000")
+        return env
+
     def _speed(self):
         sp = getattr(self, "_speed_override", None) or self.speed
         return list(self.speed_args.get(sp, [])) if self._speed_ok else []
@@ -346,7 +353,7 @@ class Runner:
             self._stopped = False
             self._proc = subprocess.Popen(
                 [path] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                cwd=self.code_dir or self.workdir, env=clean_env(), creationflags=NO_WINDOW)
+                cwd=self.code_dir or self.workdir, env=self._env(), creationflags=NO_WINDOW)
             proc = self._proc
         err_chunks, out_lines = [], []
         reader = threading.Thread(target=lambda: err_chunks.append(proc.stderr.read()), daemon=True)
@@ -433,7 +440,9 @@ class ClaudeRunner(Runner):
 
     def _reply(self, prompt, allow_edits, on_event):
         allowed = CLAUDE_READ_ONLY_TOOLS + (CLAUDE_DOC_EDIT_TOOLS if allow_edits else [])
-        blocked = CLAUDE_CODE_BLOCKED_TOOLS if self.code_dir else CLAUDE_BLOCKED_TOOLS
+        blocked = (CLAUDE_CODE_BLOCKED_TOOLS if self.code_dir else CLAUDE_BLOCKED_TOOLS) + \
+            ([] if allow_edits else CLAUDE_DOC_EDIT_TOOLS)
+        self.diag = {"servers": {}, "denied": [], "tool_errors": []}
         args = [
             "-p",
             # stream-json: live text as Claude writes, tool activity, and rate-limit status.
@@ -452,6 +461,7 @@ class ClaudeRunner(Runner):
                 used.add(m.group(1).replace("_", " ").lower())
 
         def on_line(line):
+            self._diagnose(line)
             if '"assistant"' in line and '"tool_use"' in line:
                 try:
                     ev = json.loads(line)
@@ -511,6 +521,36 @@ class ClaudeRunner(Runner):
         if used:
             self.verified_connectors = getattr(self, "verified_connectors", set()) | used
         return text
+
+    def _diagnose(self, line):
+        """Note which connectors loaded, which tools were refused, and connector errors, so the app
+        can say why Claude couldn't open Drive instead of leaving it to guess."""
+        if not line.startswith("{") or not any(k in line for k in ('"init"', '"permission_denials"', '"is_error"')):
+            return
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            return
+        d = self.diag
+        if ev.get("type") == "system" and ev.get("subtype") == "init":
+            for srv in ev.get("mcp_servers") or []:
+                if isinstance(srv, dict) and srv.get("name"):
+                    d["servers"][srv["name"]] = srv.get("status", "?")
+            print("Claude connectors this turn:", d["servers"])
+        elif ev.get("type") == "result":
+            for den in ev.get("permission_denials") or []:
+                name = den.get("tool_name") if isinstance(den, dict) else str(den)
+                if name and name not in d["denied"]:
+                    d["denied"].append(name)
+        elif ev.get("type") == "user":
+            for block in (ev.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
+                    c = block.get("content")
+                    text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
+                    if text:
+                        d["tool_errors"].append(text.strip()[:300])
+        if d["denied"] or d["tool_errors"]:
+            print("Claude tool problems:", d["denied"], d["tool_errors"][-3:])
 
     def _digest(self, raw):
         """Read Claude Code's stream-json lines: returns (final text, is_error) and records rate limits."""

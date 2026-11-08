@@ -248,8 +248,10 @@ class Orchestrator:
             self.chat_id = None
             self.project_id = project_id
             project = self.store.project(project_id)
+            # new chats in a project start with the project's last "Allow doc edits" choice
             self.pending_chat_settings = {"doc_link": project["doc_link"] if project else "",
-                                          "allow_edits": False}
+                                          "allow_edits": bool(project) and
+                                          self.store.get_setting(f"allow_edits_project_{project_id}") == "1"}
             self.status = "idle"
 
     def open_chat(self, chat_id):
@@ -281,6 +283,8 @@ class Orchestrator:
 
     def set_chat_settings(self, doc_link=None, allow_edits=None):
         with self._lock:
+            if allow_edits is not None and self.project_id:
+                self.store.set_setting(f"allow_edits_project_{self.project_id}", "1" if allow_edits else "0")
             if self.chat_id is None:
                 if doc_link is not None:
                     self.pending_chat_settings["doc_link"] = doc_link.strip()
@@ -556,6 +560,7 @@ class Orchestrator:
             self._note("Stopped. Send a message to continue.")
             self._record_change(code_dir, before, runner.name)
             return "error"
+        self._report_tool_problems(runner)
         for edit in getattr(runner, "last_edits", []) or []:
             self.store.add_doc_edit(self.chat_id, self.project_id, edit["tool"], edit["doc_id"], edit["summary"])
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
@@ -589,6 +594,28 @@ class Orchestrator:
         if signal == "HOLD":
             self.last_hold = question or "they think it's too early to ask"
         return signal
+
+    def _report_tool_problems(self, runner):
+        """Tell you (in plain words) when Claude's connectors didn't load or a tool was refused."""
+        d = getattr(runner, "diag", None)
+        if not d:
+            return
+        drive_like = {k: v for k, v in d["servers"].items() if re.search(r"drive|docs", k, re.I)}
+        down = {k.replace("claude.ai ", ""): v for k, v in drive_like.items() if str(v).lower() not in ("connected", "ok")}
+        if down:
+            what = ", ".join(f"{k} ({v})" for k, v in down.items())
+            fix = ("sign in again: claude.ai → Settings → Connectors" if any("auth" in str(v).lower() for v in down.values())
+                   else "it may be a temporary hiccup; if it keeps happening, press Refresh in Connections")
+            self._note(f"{runner.name}'s connectors didn't load this turn: {what}. To fix: {fix}.")
+        denied = [t for t in d["denied"] if "Bash" not in t and "PowerShell" not in t]
+        edit_denied = [t for t in denied if any(e.split("__")[-1] in t for e in
+                       ("update_doc", "update_file", "create_file", "copy_file", "add_comment_reply"))]
+        if edit_denied and not self.chat_settings().get("allow_edits"):
+            self._note(f"{runner.name} tried to edit a doc, but Allow doc edits is off for this chat. "
+                       "Turn it on in the right panel if you want it to make approved edits.")
+        others = [t for t in denied if t not in edit_denied]
+        if others:
+            self._note(f"{runner.name} was blocked from using: {', '.join(sorted(set(others)))[:300]}.")
 
     # ----- coding area -----
 
