@@ -578,7 +578,8 @@ class App:
                         return self._json({"error": "Couldn't open the folder picker. Paste the folder path instead."}, 500)
                     return self._json({"ok": True, "path": folder})
                 elif path == "/api/approve":
-                    if not app.orch.approve_commands(int(data.get("msg_id", 0)), bool(data.get("ok"))):
+                    if not app.orch.approve_commands(int(data.get("msg_id", 0)), bool(data.get("ok")),
+                                                     bool(data.get("always"))):
                         return self._json({"error": "That request isn't waiting any more."}, 409)
                 elif path == "/api/code/run":
                     rel = str(data.get("path", ""))
@@ -633,6 +634,9 @@ class App:
                 elif path == "/api/ui":
                     if isinstance(data.get("collapsed"), list):
                         app.store.set_setting("ui_collapsed", json.dumps([str(x) for x in data["collapsed"]][:20]))
+                elif path == "/api/allowed-commands":
+                    if isinstance(data.get("commands"), list):
+                        app.orch.set_allowed_commands([str(c) for c in data["commands"]])
                 elif path == "/api/resume":
                     app.orch.resume()
                 elif path == "/api/regenerate":
@@ -679,8 +683,22 @@ class App:
     def _watchdog(self, track_window):
         """Close the app when its window is gone (closed, or not checking in any more)."""
         opened_at = time.time()
+        busy_until, told_at = 0, 0
         while not self.quit_event.wait(2):
             now = time.time()
+            gone = (self.bye_at and now - self.bye_at > BYE_GRACE and (self.last_seen or 0) < self.bye_at) or \
+                   (self.last_seen is not None and now - self.last_seen > IDLE_LIMIT)
+            # Models still working: keep going in the background, even with the window closed.
+            if self.orch.status == "running":
+                busy_until = now + 6
+                if gone and told_at < (self.last_seen or 0) + 1:
+                    told_at = now
+                    toast("AI Amalgam is still working",
+                          "You'll get a notification when the models finish or need you. "
+                          "Open the app again from the desktop shortcut to watch.")
+                continue
+            if now < busy_until:      # let the "finished" notification go out first
+                continue
             # A window said goodbye and no window has checked in since: it was closed.
             if self.bye_at and now - self.bye_at > BYE_GRACE and (self.last_seen or 0) < self.bye_at:
                 print("Window closed.")

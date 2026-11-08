@@ -81,6 +81,9 @@ Your normal browser isn't involved.
 
 ## Handy extras
 
+- **Closing the window doesn't stop the work.** If the models are still talking, the app keeps
+  going in the background and notifies you when they finish or need you, then closes. Reopen it
+  from the desktop shortcut any time.
 - **Formatting:** lists, headings, tables, links and code blocks show properly. Code blocks have a
   **Copy** button; hover any message for **Copy**, **Edit** (your last message) and **Regenerate**.
 - **Continue / Retry:** when a discussion stops (round limit, Stop, or an error), a button
@@ -111,6 +114,8 @@ get a **Chat | Code** switch at the top.
   git), a blue box shows the exact command with **Approve and run** and **Deny**. Approved
   commands run in PowerShell in the code folder (2-minute limit each), and everyone sees the
   output. Typing a reply instead skips them.
+  **Always allow** runs it and, from then on, runs that exact command in this project without
+  asking. The list shows in the Project card; press × to make one ask again.
 - **Code tab:** *Files* to read any file (▶ Run works for .py, .js, .ps1, .bat and .html files),
   *Changes* to see exactly what each turn changed, and *Terminal* for command output.
 - **Undo:** every change is saved as a checkpoint. In *Changes*, **Undo to before this** puts

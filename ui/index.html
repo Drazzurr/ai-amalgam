@@ -232,6 +232,9 @@
   .av.Terminal, .av.ran { background: #2b2f38 !important; color: #8fe0b5 !important; font-size: 12px; }
   .name.Terminal { color: #8fe0b5; }
   .codefield { display: flex; gap: 6px; } .codefield input { flex: 1; min-width: 0; }
+  .allowed { display: flex; align-items: center; gap: 6px; font: 12.5px Consolas, monospace; color: #8fe0b5; padding: 3px 0; }
+  .allowed span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .allowed button { color: var(--faint); font-size: 15px; padding: 0 4px; } .allowed button:hover { color: #ef8b8b; }
   .err2 { color: #ef8b8b; font-size: 12.5px; margin: 6px 0 0; }
 
   /* ---------- composer ---------- */
@@ -385,7 +388,7 @@
   <div class="composer">
     <div class="resumebar" id="resumeBar"><button class="btn go" id="resumeBtn">▶ Continue</button></div>
     <div class="approvebar" id="approveBar"><div class="t"><b id="apWho"></b> wants to run this in your code folder:</div><pre id="apCmds"></pre>
-      <div class="row"><button class="btn go" id="apOk">Approve and run</button><button class="btn no" id="apNo">Deny</button>
+      <div class="row"><button class="btn go" id="apOk">Approve and run</button><button class="btn" id="apAlways" title="Run it now, and from now on run these exact commands in this project without asking">Always allow</button><button class="btn no" id="apNo">Deny</button>
         <small>Or type a reply to skip them.</small></div></div>
 
     <div class="chips2" id="fileChips"></div>
@@ -423,6 +426,7 @@
     <div class="codefield"><input id="projCode" class="field" placeholder="No folder yet" spellcheck="false"><button class="btn" id="pickCode" title="Use a folder you already have">Choose…</button></div>
     <div class="codefield" style="margin-top:6px"><button class="btn go" id="makeCode" style="flex:1" title="Makes a new folder in Documents\AI Amalgam Projects">Create a folder for me</button><button class="btn" id="openCode" title="Open the folder in File Explorer">Open</button></div>
     <p class="err2" id="codeErr" style="display:none"></p>
+    <div id="allowedBox" style="display:none"><div class="sublabel">Always-allowed commands <span class="hint">run without asking</span></div><div id="allowedList"></div></div>
     <p class="help">Saved automatically. Every chat in this project gets these.</p>
   </div>
   <div class="card" id="editsCard" data-card="edits" style="display:none">
@@ -677,11 +681,23 @@ function renderLive(s) {
   if (atBottom) log.scrollTop = log.scrollHeight;
 }
 
-const ideas = [
-  "Plan a weekend project that teaches me SQL. Agree on one plan.",
-  "Debate: should my next PC build prioritise GPU or CPU for modding and gaming?",
-  "Design the save system for a small indie RPG. Ask me anything you need.",
-];
+const ideas = {
+  general: [
+    "Brainstorm three villains for my D&D campaign, then agree on the strongest one.",
+    "Plan my next Skyrim mod: the steps, the tools, and what could go wrong.",
+    "Suggest the three most useful next features for my character app.",
+  ],
+  doc: [
+    "Read the project doc and list the open questions I still need to decide.",
+    "Check the doc for contradictions and propose fixes for me to approve.",
+    "Draft the next section, then ask me to approve it before editing.",
+  ],
+  code: [
+    "Look through the code folder and explain how the project is organized.",
+    "Find the most likely bugs and suggest fixes.",
+    "Add one small feature, test it, and show me what changed.",
+  ],
+};
 let projectsById = {};
 function showEmpty(projectId) {
   const p = projectsById[projectId];
@@ -689,7 +705,7 @@ function showEmpty(projectId) {
     <h2>${p ? esc(p.name) : "What should we work on?"}</h2>
     <p>${p ? "New chat in this project. Both models get the project's instructions and doc." :
       "Give Claude and GPT a goal. They'll talk it through together and check with you on the decisions."}</p>
-    <div class="chips">${ideas.map(i => `<button>${esc(i)}</button>`).join("")}</div></div>`;
+    <div class="chips">${(p && p.code_dir ? ideas.code : p && p.doc_link ? ideas.doc : ideas.general).map(i => `<button>${esc(i)}</button>`).join("")}</div></div>`;
   $("log").querySelectorAll(".chips button").forEach(b => b.onclick = () => { $("input").value = b.textContent; grow(); $("input").focus(); });
   typingEl();
 }
@@ -945,6 +961,8 @@ async function poll() {
       $("log").scrollTop = $("log").scrollHeight;
     } else {
       s.messages.forEach(m => { addMessage(m, true); lastId = m.id; });
+      const p = projectsById[s.project_id], ek = p ? `${p.id}|${!!p.code_dir}|${!!p.doc_link}` : "";
+      if ($("log").querySelector(".empty") && $("log").dataset.ek !== ek) { $("log").dataset.ek = ek; showEmpty(s.project_id); }
     }
     const restingNames = s.resting || {};
     const models = s.models.map(m => restingNames[m.name] ? {...m, status: "resting until " + new Date(restingNames[m.name] * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})} : m);
@@ -1192,21 +1210,33 @@ function renderCode(s) {
   if (show && $("approveBar").dataset.id !== String(pid)) {
     $("approveBar").dataset.id = pid; $("apWho").textContent = m.speaker;
     $("apCmds").textContent = m.text.split("\n").map(c => "$ " + c).join("\n");
-    $("apOk").disabled = $("apNo").disabled = false;
+    $("apOk").disabled = $("apNo").disabled = $("apAlways").disabled = false;
   }
+  renderAllowed(s.code && s.code.allowed);
   // refresh the open tab when a turn or command finishes
   const running = s.status === "running";
   if (wasRunning && !running && view === "code") loadCodeTab();
   if (view === "code" && ctab === "term") renderTerm();
   wasRunning = running;
 }
-async function approve(ok) {
-  $("apOk").disabled = $("apNo").disabled = true;
-  const r = await api("/api/approve", {msg_id: +$("approveBar").dataset.id, ok});
+async function approve(ok, always) {
+  $("apOk").disabled = $("apNo").disabled = $("apAlways").disabled = true;
+  const r = await api("/api/approve", {msg_id: +$("approveBar").dataset.id, ok, always: !!always});
   if (r.error) alert(r.error);
 }
 $("apOk").onclick = () => approve(true);
 $("apNo").onclick = () => approve(false);
+$("apAlways").onclick = () => approve(true, true);
+let allowedSig = "";
+function renderAllowed(list) {
+  const sig = JSON.stringify(list || []);
+  if (sig === allowedSig) return;
+  allowedSig = sig;
+  $("allowedBox").style.display = list && list.length ? "" : "none";
+  $("allowedList").innerHTML = (list || []).map((c, i) => `<div class="allowed"><span title="${esc(c)}">$ ${esc(c)}</span><button data-rm="${i}" title="Ask again before running this">×</button></div>`).join("");
+  $("allowedList").querySelectorAll("[data-rm]").forEach(b => b.onclick = () =>
+    api("/api/allowed-commands", {commands: list.filter((_, j) => j !== +b.dataset.rm)}));
+}
 
 async function loadFiles() {
   const r = await api("/api/code/files");

@@ -452,6 +452,7 @@ class Orchestrator:
             "doc_edits": self.store.doc_edits(self.chat_id, self.project_id) if self.chat_id or self.project_id else [],
             "condensed": self.store.summary(self.chat_id)[1] > 0 if self.chat_id else False,
             "code": {"dir": self.code_dir(), "checkpoints": bool(self.cp and self.cp.available),
+                     "allowed": self.allowed_commands(),
                      "pending_command": self.pending_commands["msg_id"] if self.pending_commands else None},
             "models": [
                 {"key": k, "name": self.runners[k].name, "enabled": self.enabled[k],
@@ -498,9 +499,12 @@ class Orchestrator:
                     if result == "error":
                         return
                     if result == "command":
+                        if self._auto_run() and not self.last_question:
+                            continue
                         if self.last_question:
                             self._publish(self.last_question)
-                        self._pause_for_user()
+                        if self.pending_commands or self.last_question:
+                            self._pause_for_user()
                         return
                     if result == "question":
                         self._publish(self.last_question)   # you asked this model directly: no check
@@ -524,9 +528,13 @@ class Orchestrator:
                     if result == "rested":
                         continue
                     if result == "command":   # wait for you to approve or deny the commands
+                        if self._auto_run() and not self.last_question:
+                            done_streak = 0
+                            continue      # always-allowed commands ran; keep going
                         if self.last_question:
                             self._publish(self.last_question)
-                        self._pause_for_user()
+                        if self.pending_commands or self.last_question:
+                            self._pause_for_user()
                         return
                     if result == "question":
                         outcome = self._ask_user(key)
@@ -783,12 +791,43 @@ class Orchestrator:
         self._note(f"{who} changed {len(files)} file{'s' if len(files) != 1 else ''}: {names} (+{plus} −{minus}). "
                    "See the Code tab for the changes or to undo them.")
 
-    def approve_commands(self, msg_id, ok):
-        """You clicked Approve or Deny on a command request."""
+    def allowed_commands(self):
+        import json
+        if not self.project_id:
+            return []
+        try:
+            return list(json.loads(self.store.get_setting(f"allowed_cmds_project_{self.project_id}", "[]")))
+        except ValueError:
+            return []
+
+    def set_allowed_commands(self, commands):
+        import json
+        if self.project_id:
+            self.store.set_setting(f"allowed_cmds_project_{self.project_id}",
+                                   json.dumps(sorted(set(c for c in commands if c))[:100]))
+
+    def _auto_run(self):
+        """Run the pending commands right away if you marked every one of them 'always allow'."""
+        pc, code_dir = self.pending_commands, self.code_dir()
+        allowed = set(self.allowed_commands())
+        if not (pc and code_dir and allowed and all(c in allowed for c in pc["commands"])):
+            return False
+        self.pending_commands = None
+        for cmd in pc["commands"]:
+            if self._stop.is_set():
+                break
+            self._run_one(cmd, code_dir, "Terminal")
+        self.turn_seq += 1
+        return True
+
+    def approve_commands(self, msg_id, ok, always=False):
+        """You clicked Approve, Always allow, or Deny on a command request."""
         with self._lock:
             pc = self.pending_commands
             if not pc or pc["msg_id"] != msg_id or self.status == "running":
                 return False
+            if ok and always:
+                self.set_allowed_commands(self.allowed_commands() + pc["commands"])
             self.pending_commands = None
             self.status = "running"
             self._stop.clear()

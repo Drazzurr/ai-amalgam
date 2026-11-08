@@ -768,7 +768,7 @@ class DemoRunner(Runner):
             "Here is my take:\n- break the goal into **small steps**\n- test each one\n  - then check the doc\n\n"
             "| Step | Owner |\n|---|---|\n| Plan | Claude |\n| Review | GPT |\n\n```python\nprint('hi')\n```",
         ]
-        if self.code_dir and self.key == "claude" and "[Command result" not in prompt and self.turns == 1:
+        if self.code_dir and self.key == "claude" and "[Command result" not in prompt:
             with open(os.path.join(self.code_dir, "hello.py"), "w", encoding="utf-8") as f:
                 f.write('print("Hello from AI Amalgam")\n')
             lines = [f"({self.name}, demo) I created hello.py. Let's run it to check.",
