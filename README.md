@@ -53,6 +53,9 @@ Your normal browser isn't involved.
 ## Using it
 - **Start a discussion:** type a goal, e.g. "Plan a weekend Python project that teaches me
   SQL. Agree on one plan." Claude speaks first, then GPT, and so on.
+- **Teamwork:** before a question reaches you, the other model checks it. If it thinks the
+  question is premature or unfair, the asker gets one more turn to drop or fix it. If they
+  still disagree, you get both sides as buttons.
 - **When they need you:** a yellow box shows the question. When there are clear options, click
   one of the buttons (or "Write my own…" to type an answer); the discussion continues.
 - **Ask just one model:** start your message with `@claude` or `@gpt` (one reply, no discussion).

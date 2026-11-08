@@ -9,7 +9,7 @@ import time
 # messages are left out (the first message - your goal - is always kept).
 MAX_TRANSCRIPT_CHARS = 60000
 
-SIGNAL_RE = re.compile(r"^\W*(NEXT|DONE|NEED USER)\b\W*:?\s*(.*)$", re.IGNORECASE)
+SIGNAL_RE = re.compile(r"^\W*(NEXT|DONE|NEED USER|AGREE|HOLD)\b\W*:?\s*(.*)$", re.IGNORECASE)
 MENTION_RE = re.compile(r"@(claude|gpt|chatgpt|codex|all)\b", re.IGNORECASE)
 
 PROMPT_TEMPLATE = """You are {name}, one of several AI participants in a group discussion run by the AI Amalgam app.
@@ -17,9 +17,11 @@ Participants: you ({name}), {others}, and the user (the human who leads and make
 
 How this works:
 - The transcript below shows everything said so far. Each message is tagged with its speaker.
-- Write ONLY your next message to the group. Talk to the other model(s) directly: build on good ideas, challenge weak ones, and move the work forward. Don't repeat points that are already agreed.
+- Write ONLY your next message to the group. Talk to the other model(s) directly and move the work forward. Don't repeat points that are already agreed.
+- You are teammates working for the user, not debaters. Build on each other's work. When a teammate makes a fair point, say so plainly ("good catch, I'll use that") and adopt it. If you disagree, say so once with your reason; don't reopen a point that's been settled. If you still disagree after one exchange, stop arguing and put both options to the user.
+- Correct real problems (wrong facts, contradictions with the user's decisions or documents, missed requirements), but don't nitpick wording or taste.
 - Keep it focused: aim for under 250 words unless the task needs more (for example a draft, a plan or code).
-- Don't make decisions that belong to the user (preferences, budget, scope, taste). Ask instead.
+- Don't make decisions that belong to the user (preferences, budget, scope, taste). Ask instead, but collect your questions: do all the work you can first, then ask them together. If the user said how often they want to be asked (for example "keep going until you need me"), that wins.
 {tools}{doc}
 The last line of your message must be exactly one of these:
 NEXT
@@ -31,8 +33,34 @@ When your NEED USER question has a few clear answers, list them just above that 
 === TRANSCRIPT ===
 {transcript}
 === END OF TRANSCRIPT ===
-
+{extra}
 Now write your message as {name}."""
+
+REVIEW_EXTRA = """
+=== THIS TURN: CHECK {asker}'S QUESTION ===
+{asker} wants to pause the discussion and ask the user:
+{question}{choices}
+
+Before it goes to the user, you check it as {asker}'s teammate. Write a short message (under 120 words): add anything the user should know before answering, if anything. Don't restart other debates here.
+Then your last line must be exactly one of these (instead of NEXT/DONE):
+AGREE
+HOLD: <one-sentence reason>
+NEED USER: <your own question>
+Use AGREE if the question is needed now and fairly framed. Use HOLD only for a real problem: it's premature (the group can still make progress first, or the user said to keep working), the user already answered it, or the choices leave out an important option or are slanted. Use NEED USER if you agree and also need to ask the user something yourself (add CHOICE lines for it as usual).
+"""
+
+RECONSIDER_EXTRA = """
+=== THIS TURN: YOUR QUESTION WAS HELD ===
+You wanted to ask the user:
+{question}
+Your teammate{s} suggested holding it:
+{holds}
+
+Take their point seriously. Do one of these:
+- Drop or postpone the question: say so in a sentence, then carry on with the work and end with NEXT.
+- Ask a better question: fix it and end with NEED USER (with CHOICE lines).
+- Ask it anyway: only if you still disagree. Say why in one sentence, and give CHOICE lines that fairly cover both your view and {others}'s view (for example "CHOICE: {me}'s way - ..." and "CHOICE: {other1}'s way - ...") so the user can settle it with one click. End with NEED USER.
+"""
 
 TOOLS_WITH_DRIVE = """
 Your tools: you can read the user's Google Drive and Google Docs{web}.{peers_note} Don't assume the others have read the same parts you did: quote or summarise what you rely on.
@@ -79,8 +107,8 @@ This is the shared document the group is working on.
 EDITS_ON_EDITOR = """
 Document editing is ON, and you are the one who applies edits. Rules:
 1. First agree on the change in the discussion.
-2. Then end your message with NEED USER showing the exact change: which document, where, and the new text.
-3. Apply it only if the user's most recent message clearly approves that change. Then say exactly what you changed.
+2. Batch your edits: draft as many agreed changes as you sensibly can, then ask for approval once for the whole batch. List each change in your message (which document, where, the new text) and end with NEED USER. Don't stop to ask after every small change.
+3. Apply only the changes the user's most recent message clearly approves (they may approve some and not others). Then say exactly what you changed.
 4. Change only what was approved. Never delete whole sections, rename, move, share or trash files.
 """
 
@@ -102,7 +130,7 @@ def parse_signal(text):
         m = SIGNAL_RE.match(lines[-1].strip().strip("*_`"))
         if m:
             signal = m.group(1).upper()
-            question = m.group(2).strip().strip("*_`").strip() if signal == "NEED USER" else ""
+            question = m.group(2).strip().strip("*_`").strip() if signal in ("NEED USER", "HOLD") else ""
             body = "\n".join(lines[:-1]).rstrip()
             return body or "(nothing to add)", signal, question
     return text.strip(), "NEXT", ""
@@ -166,7 +194,9 @@ class Orchestrator:
         self._stop = threading.Event()
         self.pending_files = []   # uploaded files waiting to go with your next message
         self.turn_seq = 0   # bumps after every finished turn (the app refreshes usage on change)
-        self.resting = {}   # model key -> time it can rejoin (after hitting its plan limit)
+        self.resting = {}
+        self.last_question = None   # (speaker, question, choices) waiting for a teammate's check
+        self.last_hold = ""   # model key -> time it can rejoin (after hitting its plan limit)
         self._thread = None
 
     # ----- public actions (called from the web UI) -----
@@ -323,7 +353,9 @@ class Orchestrator:
                     result = self._turn(key)
                     if result == "error":
                         return
-                    asked = asked or result == "question"
+                    if result == "question":
+                        self._publish(self.last_question)   # you asked this model directly: no check
+                        asked = True
                 if asked:
                     self._pause_for_user()
                 return
@@ -343,7 +375,14 @@ class Orchestrator:
                     if result == "rested":
                         continue
                     if result == "question":
-                        asked = True  # let the others have their say, then pause
+                        outcome = self._ask_user(key)
+                        if outcome == "error":
+                            return
+                        if outcome == "asked":
+                            self._pause_for_user()
+                            return
+                        done_streak = 0
+                        continue
                     done_streak = done_streak + 1 if result == "DONE" else 0
                     if not asked and done_streak >= len(self._active()):
                         self._note("Discussion finished: every model agrees the goal is met. "
@@ -392,7 +431,7 @@ class Orchestrator:
             self._note(f"Condensed {len(older)} earlier messages into a short summary to save usage. "
                        "The full chat is still here for you.")
 
-    def _turn(self, key):
+    def _turn(self, key, extra=""):
         try:
             self._maybe_condense()
         except Exception as e:
@@ -400,7 +439,7 @@ class Orchestrator:
         runner = self.runners[key]
         self.live = {"activity": "starting", "text": "", "rev": self.live["rev"] + 1}
         self.speaker = runner.name
-        prompt = self._build_prompt(key)
+        prompt = self._build_prompt(key, extra)
         allow_edits = bool(self.chat_settings().get("allow_edits"))
 
         def on_event(activity=None, text=None):
@@ -465,13 +504,66 @@ class Orchestrator:
                 self._note("Saved to project memory: " + "; ".join(saved))
         if signal == "NEED USER":
             question = question or "(asked for your input)"
-            choices = choices or guess_choices(question)
-            self.store.add(self.chat_id, runner.name, "question",
-                           question + "".join(f"\nCHOICE: {c}" for c in choices))
+            # held back until a teammate has checked it (see _ask_user)
+            self.last_question = (runner.name, question, choices or guess_choices(question))
             return "question"
+        if signal == "HOLD":
+            self.last_hold = question or "they think it's too early to ask"
         return signal
 
-    def _build_prompt(self, key):
+    def _publish(self, q):
+        speaker, question, choices = q
+        self.store.add(self.chat_id, speaker, "question",
+                       question + "".join(f"\nCHOICE: {c}" for c in choices))
+
+    def _ask_user(self, asker):
+        """A model wants to ask you something. Its teammates check the question first; if one
+        holds it, the asker reconsiders once. Returns 'asked', 'continue' or 'error'."""
+        q = self.last_question
+        reviewers = [k for k in self._active() if k != asker]
+        if not reviewers:
+            self._publish(q)
+            return "asked"
+        names = " and ".join(self.runners[k].name for k in reviewers)
+        self._note(f"{q[0]} wants to ask you something; {names} is checking it first.")
+        choices_txt = "".join(f"\nCHOICE: {c}" for c in q[2])
+        holds, extra_qs = [], []
+        for key in reviewers:
+            if self._stop.is_set():
+                return "error"
+            self.last_hold = ""
+            result = self._turn(key, REVIEW_EXTRA.format(asker=q[0], question=q[1], choices=choices_txt))
+            if result == "error":
+                return "error"
+            if result == "HOLD":
+                holds.append((self.runners[key].name, self.last_hold))
+            elif result == "question":
+                extra_qs.append(self.last_question)
+            # AGREE, NEXT, DONE, or resting: the question goes ahead
+        if not holds:
+            for x in [q] + extra_qs:
+                self._publish(x)
+            return "asked"
+        for who, why in holds:
+            self._note(f"{who} suggested holding {q[0]}'s question: {why}")
+        if self._stop.is_set():
+            return "error"
+        others = [w for w, _ in holds]
+        result = self._turn(asker, RECONSIDER_EXTRA.format(
+            question=q[1] + choices_txt, s="s" if len(holds) > 1 else "",
+            holds="\n".join(f"- {w}: {why}" for w, why in holds),
+            others=" and ".join(others), me=q[0], other1=others[0]))
+        if result == "error":
+            return "error"
+        if result == "question":
+            extra_qs.insert(0, self.last_question)
+        elif result != "rested":
+            self._note(f"{q[0]} held off on the question for now.")
+        for x in extra_qs:
+            self._publish(x)
+        return "asked" if extra_qs else "continue"
+
+    def _build_prompt(self, key, extra=""):
         runner = self.runners[key]
         name = runner.name
         others = [self.runners[k].name for k in self._active() if k != key]
@@ -535,7 +627,7 @@ class Orchestrator:
                 lines.append(f"[{m['speaker']} asked the user]: {m['text']}")
             else:
                 lines.append(f"[{m['speaker']}]: {m['text']}")
-        return PROMPT_TEMPLATE.format(name=name, others=others_text, tools=tools, doc=doc,
+        return PROMPT_TEMPLATE.format(name=name, others=others_text, tools=tools, doc=doc, extra=extra,
                                       transcript=self._fit(lines))
 
     @staticmethod

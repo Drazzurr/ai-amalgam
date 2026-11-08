@@ -214,7 +214,7 @@ CLAUDE_SPEED_ARGS = {"fast": ["--model", "haiku"], "balanced": [], "best": ["--m
 CODEX_SPEED_ARGS = {"fast": ["-c", 'model_reasoning_effort="low"'], "balanced": [],
                     "best": ["-c", 'model_reasoning_effort="high"']}
 
-SIGNAL_TAIL_RE = re.compile(r"\n?\W*(NEXT|DONE|NEED USER\b.*)\W*$", re.IGNORECASE)
+SIGNAL_TAIL_RE = re.compile(r"\n?\W*(NEXT|DONE|AGREE|HOLD\b.*|NEED USER\b.*)\W*$", re.IGNORECASE)
 
 
 CHOICE_LINE_RE = re.compile(r"^\W*CHOICE\s*:.*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
@@ -227,7 +227,7 @@ def visible_text(text):
     text = CHOICE_LINE_RE.sub("", text).rstrip()
     head, _, last = text.rpartition("\n")
     tail = last.strip().strip("*_`").upper()
-    if tail and any(sig.startswith(tail) or tail.startswith("CHOICE") for sig in ("NEXT", "DONE", "NEED USER", "CHOICE")):
+    if tail and any(sig.startswith(tail) or tail.startswith("CHOICE") for sig in ("NEXT", "DONE", "NEED USER", "CHOICE", "AGREE", "HOLD")):
         return head.rstrip()
     return text
 
@@ -712,7 +712,14 @@ class DemoRunner(Runner):
             "Here is my take: break the goal into small steps and test each one, "
             "then check the result against the doc before moving on.",
         ]
-        if self.turns == 2 and self.key == "gpt":
+        if "CHECK" in prompt and "QUESTION ===" in prompt:
+            lines = [f"({self.name}, demo check) I think we can draft a bit more before asking.",
+                     "HOLD: we can still draft one more section first"]
+        elif "YOUR QUESTION WAS HELD" in prompt:
+            lines = [f"({self.name}, demo) Fair point, but I still think we need this now.",
+                     "CHOICE: GPT's way - ask now", "CHOICE: Claude's way - draft more first",
+                     "NEED USER: Should we decide speed vs polish now, or draft more first?"]
+        elif self.turns == 2 and self.key == "gpt":
             lines += ["CHOICE: Speed first", "CHOICE: Polish first", "CHOICE: A bit of both",
                       "NEED USER: Should we aim for speed or for polish first?"]
         elif self.turns >= 4:
