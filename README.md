@@ -79,6 +79,21 @@ Your normal browser isn't involved.
 - The **Project** card (right panel) holds instructions both models follow in every chat of that project,
   and a default doc link for new chats. Deleting a project keeps its chats (they move to **Chats**).
 
+## Blender
+
+The **Apps** card connects Blender:
+
+1. Click **Set up Blender**. Amalgam installs *uv* (a small helper) if needed, copies the
+   **Blender MCP** add-on into Blender, and connects it to Claude and GPT.
+2. In Blender: **Edit → Preferences → Add-ons**, search "MCP", tick **Interface: Blender MCP**.
+   Then press **N** in the 3D view, open the **BlenderMCP** tab and click **Connect**.
+3. In Amalgam, switch **Blender** on. The card shows "Blender is open with the add-on running".
+
+With it on, the models can inspect your scene, take viewport screenshots and run Blender Python
+(full access, which can also touch files on your PC, so save your .blend first). Claude makes
+the changes; GPT inspects and reviews. In a project with a code folder they can also ask to run
+Blender in the background for batch jobs and renders (with your approval).
+
 ## Handy extras
 
 - **Closing the window doesn't stop the work.** If the models are still talking, the app keeps

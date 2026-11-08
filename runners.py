@@ -257,6 +257,8 @@ def tool_activity(name):
         return "reading a doc"
     if "drive" in n or "docs" in n or "google" in n:
         return "using Google Drive"
+    if "blender" in n:
+        return "screenshotting Blender" if "screenshot" in n else "working in Blender"
     if "websearch" in n or "web_search" in n:
         return "searching the web"
     if n in ("edit", "multiedit", "write", "notebookedit"):
@@ -439,7 +441,8 @@ class ClaudeRunner(Runner):
         return parse_claude_mcp_list(run_command(self.exe, ["mcp", "list"]))
 
     def _reply(self, prompt, allow_edits, on_event):
-        allowed = CLAUDE_READ_ONLY_TOOLS + (CLAUDE_DOC_EDIT_TOOLS if allow_edits else [])
+        allowed = CLAUDE_READ_ONLY_TOOLS + (CLAUDE_DOC_EDIT_TOOLS if allow_edits else []) + \
+            list(getattr(self, "extra_allowed", []) or [])
         blocked = (CLAUDE_CODE_BLOCKED_TOOLS if self.code_dir else CLAUDE_BLOCKED_TOOLS) + \
             ([] if allow_edits else CLAUDE_DOC_EDIT_TOOLS)
         self.diag = {"servers": {}, "denied": [], "tool_errors": []}

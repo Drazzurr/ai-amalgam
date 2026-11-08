@@ -113,6 +113,19 @@ You are working inside it (it is your current folder). {role}
 - Work as a team: the editor makes changes in small, reviewable steps and says what changed and why; the reviewer reads the changed files and the diff, points out real bugs or risks, and suggests concrete fixes. Test changes by asking to run them.
 {changes}"""
 
+BLENDER_LINE = """
+=== BLENDER ===
+The user's Blender is connected to you through your blender tools{status}. {who}
+- Work in small steps and check the result with a viewport screenshot.
+- Save the .blend file before big changes, and never delete or overwrite the user's files on disk unless they asked.
+- Say what you changed in the scene.
+"""
+BLENDER_WHO_EDITOR = "You make the changes: inspect the scene, take screenshots, and run Blender Python (full access)."
+BLENDER_WHO_REVIEWER = ("{editor} makes the changes in Blender. You inspect (scene info, screenshots) and review; "
+                        "don't change the scene unless the user asks you directly.")
+BLENDER_HEADLESS = ("Blender is installed at {path}. For batch jobs or renders without the open Blender, ask to run it "
+                    "in the background: RUN: & \"{path}\" --background --python <script.py> (put scripts in the code folder).\n")
+
 CODE_ROLE_EDITOR = "You are the editor: change files directly with your file edit and write tools."
 CODE_ROLE_REVIEWER = ("You are the reviewer: you can read files and run read-only checks yourself, but you can't change "
                       "files. {editor} makes the changes; when you want one, say exactly which file and what to change.")
@@ -244,6 +257,9 @@ class Orchestrator:
         self.last_hold = ""   # model key -> time it can rejoin (after hitting its plan limit)
         self._thread = None
         self.check_questions = store.get_setting("check_questions", "1") == "1"
+        self.blender_on = store.get_setting("blender_on", "0") == "1"
+        self.blender_servers = ["blender"]   # connector names to allow (the app adds any found with "blender")
+        self.blender_path = None
 
     # ----- public actions (called from the web UI) -----
 
@@ -604,6 +620,8 @@ class Orchestrator:
         self.speaker = runner.name
         code_dir = self.code_dir()
         runner.code_dir = code_dir
+        from apps import tool_prefix
+        runner.extra_allowed = [tool_prefix(n) for n in self.blender_servers] if self.blender_on else []
         runner.images = [os.path.join(runner.workdir, a["path"]) for a in
                          (self.store.attachments(self.chat_id) if self.chat_id else [])
                          if a["path"].lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))][-4:]
@@ -1032,6 +1050,17 @@ class Orchestrator:
             doc += EDITS_OFF
 
         code_dir = self.code_dir()
+        if self.blender_on:
+            from apps import blender_listening
+            claude_on = "claude" in self._active()
+            who = BLENDER_WHO_EDITOR if key == "claude" or not claude_on else \
+                BLENDER_WHO_REVIEWER.format(editor=self.runners["claude"].name)
+            status = "" if blender_listening() else (
+                ", but Blender isn't open with the add-on's server running right now. If you need it, ask the user to "
+                "open Blender and click Connect in the BlenderMCP tab (press N in the 3D view)")
+            doc += BLENDER_LINE.format(status=status, who=who)
+        if code_dir and self.blender_path:
+            doc += BLENDER_HEADLESS.format(path=self.blender_path)
         if code_dir:
             claude_on = "claude" in self._active()
             if key == "claude":

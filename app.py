@@ -254,6 +254,11 @@ class App:
         self._last_status = 0
         self._usage_again = False
         self.focused_at = 0        # last time the window said it was in front
+        import apps
+        from runners import clean_env
+        self.apps = apps
+        self.blender_setup = apps.BlenderSetup(clean_env)
+        self.orch.blender_path = apps.find_blender()[0]
         self.server = ThreadingHTTPServer(("127.0.0.1", args.port), self._handler())
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/#t={self.token}"
@@ -361,6 +366,22 @@ class App:
 
         threading.Thread(target=work, daemon=True).start()
 
+    def apps_view(self):
+        path, ver = self.apps.find_blender() if not self.orch.blender_path else (self.orch.blender_path, None)
+        if ver is None and path:
+            m = re.search(r"Blender\s*([\d.]+)", path)
+            ver = m.group(1) if m else ""
+        conn = {}
+        for key, group in (self.connections.get("models") or {}).items():
+            conn[key] = any("blender" in it["name"].lower() for it in group.get("items", []))
+        setup = self.blender_setup
+        if setup.state == "done" and getattr(self, "refresh_connections_later", False):
+            self.refresh_connections_later = False
+            self.refresh_connections()
+        return {"blender": {"path": path, "version": ver, "listening": self.apps.blender_listening(0.2),
+                            "claude": conn.get("claude", False), "gpt": conn.get("gpt", False),
+                            "on": self.orch.blender_on, "setup": {"state": setup.state, "log": setup.log[-12:]}}}
+
     def connections_view(self):
         """Connections, corrected by what actually worked in chats: a connector a model used
         successfully shows as working even if the quick start-up health check failed."""
@@ -396,6 +417,8 @@ class App:
                     models[key] = {"items": [], "error": str(e)}
                 print(f"Connections for {runner.name}:", models[key])
             self.connections.update(models=models, checked_at=time.time(), checking=False)
+            names = {it["name"] for it in (models.get("claude") or {}).get("items", []) if "blender" in it["name"].lower()}
+            self.orch.blender_servers = sorted(names | {"blender"})
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -483,6 +506,7 @@ class App:
                     state["check_questions"] = app.orch.check_questions
                     state["skills"] = list_skills()
                     state["skills_off"] = app.orch.skills_off()
+                    state["apps"] = app.apps_view()
                     try:
                         state["ui_collapsed"] = json.loads(app.store.get_setting("ui_collapsed", "null"))
                     except ValueError:
@@ -637,6 +661,15 @@ class App:
                 elif path == "/api/allowed-commands":
                     if isinstance(data.get("commands"), list):
                         app.orch.set_allowed_commands([str(c) for c in data["commands"]])
+                elif path == "/api/apps/blender/setup":
+                    app.blender_setup.start()
+                    app.refresh_connections_later = True
+                elif path == "/api/apps/blender/toggle":
+                    app.orch.blender_on = bool(data.get("on"))
+                    app.store.set_setting("blender_on", "1" if app.orch.blender_on else "0")
+                elif path == "/api/apps/blender/recheck":
+                    app.orch.blender_path = app.apps.find_blender()[0]
+                    app.refresh_connections()
                 elif path == "/api/resume":
                     app.orch.resume()
                 elif path == "/api/regenerate":
