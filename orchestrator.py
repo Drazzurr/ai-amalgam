@@ -135,6 +135,15 @@ CODE_ROLE_NO_EDITOR = ("Nobody can edit files right now (the editor, Claude, is 
 TITLE_RE = re.compile(r"^\W*TITLE\s*:\s*(.+?)\s*$", re.IGNORECASE)
 TITLE_LINE = ("\nThis is the first reply in a new chat: add one line \"TITLE: <a 3 to 6 word title for this chat>\" "
               "just above your last line.\n")
+READ_RE = re.compile(r"^\W*READ\s*:\s*(.+?)\s*$", re.IGNORECASE)
+MAX_READS = 4
+GAMEFILES_LINE = """
+=== GAME FILES ===
+You can read game files directly (archives, plugins, packages, meshes, textures, talk tables, scripts), without the user exporting anything. Put a line READ: <full path> :: <what> just above your last line (up to 4 lines). The app runs it right away, read-only, and you get the result straight after.
+<what> can be: nothing (overview), list <text>, extract <path inside the archive>, record <EditorID or FormID>, exports <text>, export <object>, find <text>, get <string id>, json, hex <offset> <length>, strings.
+Extracted files and converted images (.png) go to {out}; READ those paths next, and open .png files with your file reader to see them.
+Folders you may read: {folders}. Never change files in game folders. The game-files skill has details for each game.
+"""
 RUN_RE = re.compile(r"^\W*RUN\s*:\s*(.+?)\s*$", re.IGNORECASE)
 MAX_RUNS = 3
 
@@ -260,6 +269,8 @@ class Orchestrator:
         self.blender_on = store.get_setting("blender_on", "0") == "1"
         self.blender_servers = ["blender"]   # connector names to allow (the app adds any found with "blender")
         self.blender_path = None
+        self.game_folders = []      # set by the app: detected game installs + folders you added
+        self.workspace = runners[0].workdir if runners else "."
 
     # ----- public actions (called from the web UI) -----
 
@@ -511,7 +522,7 @@ class Orchestrator:
                         self._note(f"{self.runners[key].name} is resting until its plan limit resets "
                                    f"({time.strftime('%I:%M %p', time.localtime(self.resting[key])).lstrip('0')}).")
                         continue
-                    result = self._turn(key)
+                    result = self._turn_reading(key)
                     if result == "error":
                         return
                     if result == "command":
@@ -538,7 +549,7 @@ class Orchestrator:
                         return
                     if key not in self._active():
                         continue
-                    result = self._turn(key)
+                    result = self._turn_reading(key)
                     if result == "error":
                         return
                     if result == "rested":
@@ -685,6 +696,14 @@ class Orchestrator:
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
         reply, choices = split_choices(reply)
         reply, runs = split_runs(reply) if code_dir else (reply, [])
+        reads, kept_r = [], []
+        for line in reply.splitlines():
+            m = READ_RE.match(line)
+            if m and len(reads) < MAX_READS:
+                reads.append(m.group(1).strip().strip("`"))
+            elif not m:
+                kept_r.append(line)
+        reply = "\n".join(kept_r)
         kept, title = [], None
         for line in reply.splitlines():
             m = TITLE_RE.match(line)
@@ -710,6 +729,8 @@ class Orchestrator:
             saved = self.store.add_memory(self.project_id, remembered)
             if saved:
                 self._note("Saved to project memory: " + "; ".join(saved))
+        for r in reads:
+            self._read_file(r, runner.name)
         if signal == "NEED USER":
             question = question or "(asked for your input)"
             # held back until a teammate has checked it (see _ask_user)
@@ -722,7 +743,62 @@ class Orchestrator:
             return "command"
         if signal == "HOLD":
             self.last_hold = question or "they think it's too early to ask"
+        if reads and signal not in ("DONE", "AGREE", "HOLD"):
+            return "read"          # let the same model look at what it read
         return signal
+
+    # ----- game files -----
+
+    def game_roots(self):
+        """Folders the models may READ from: game folders, Amalgam's workspace and the code folder."""
+        roots = [g for g in self.game_folders if g] + [self.workspace]
+        cd = self.code_dir()
+        if cd:
+            roots.append(cd)
+        return roots
+
+    def extract_dir(self):
+        return os.path.join(self.workspace, "extracted", f"chat-{self.chat_id}")
+
+    def _read_file(self, request, who):
+        import gamefiles
+        path, _, query = request.partition("::")
+        path = path.strip().strip('"').strip("'")
+        query = query.strip()
+        full = os.path.realpath(os.path.expanduser(path))
+        ok = False
+        for root in self.game_roots():
+            try:
+                r = os.path.realpath(root)
+                if os.path.commonpath([full, r]) == r:
+                    ok = True
+                    break
+            except ValueError:
+                continue
+        if not ok:
+            text = ("Not allowed: that file isn't inside a game folder, the code folder or Amalgam's workspace. "
+                    "Ask the user to add its folder under Game files in the Apps card.")
+        else:
+            self.speaker = "Reader"
+            self.live = {"activity": f"reading {os.path.basename(full)}", "text": "", "rev": self.live["rev"] + 1}
+            try:
+                text = gamefiles.read(full, query, self.extract_dir())
+            except Exception as e:
+                text = f"Couldn't read it: {e}"
+            finally:
+                self.speaker = None
+        if len(text) > 30000:
+            text = text[:30000] + "\n[... cut; ask for something narrower, e.g. list <text> ...]"
+        self.store.add(self.chat_id, "Reader", "output", f"$ read {path}" + (f" :: {query}" if query else "") + f"\n[for {who}]\n{text}")
+
+    def _turn_reading(self, key):
+        """A turn, plus up to three follow-ups when the model asked to read files."""
+        result = self._turn(key)
+        hops = 0
+        while result == "read" and hops < 3 and not self._stop.is_set():
+            hops += 1
+            result = self._turn(key)
+        return "NEXT" if result == "read" else result
 
     def _report_tool_problems(self, runner):
         """Tell you (in plain words) when Claude's connectors didn't load or a tool was refused."""
@@ -1059,6 +1135,9 @@ class Orchestrator:
                 ", but Blender isn't open with the add-on's server running right now. If you need it, ask the user to "
                 "open Blender and click Connect in the BlenderMCP tab (press N in the 3D view)")
             doc += BLENDER_LINE.format(status=status, who=who)
+        if self.game_folders:
+            doc += GAMEFILES_LINE.format(out=self.extract_dir() if self.chat_id else os.path.join(self.workspace, "extracted"),
+                                         folders="; ".join(self.game_folders[:12]))
         if code_dir and self.blender_path:
             doc += BLENDER_HEADLESS.format(path=self.blender_path)
         if code_dir:
@@ -1100,8 +1179,9 @@ class Orchestrator:
             elif m["kind"] == "command":
                 lines.append(f"[{m['speaker']} asked to run]: " + "; ".join(m["text"].splitlines()))
             elif m["kind"] == "output":
-                out = m["text"] if len(m["text"]) <= 4000 else m["text"][:2000] + "\n[...]\n" + m["text"][-2000:]
-                lines.append(f"[Command result]:\n{out}")
+                cap = 16000 if m["speaker"] == "Reader" else 4000
+                out = m["text"] if len(m["text"]) <= cap else m["text"][:cap // 2] + "\n[...]\n" + m["text"][-cap // 2:]
+                lines.append(f"[{'File read' if m['speaker'] == 'Reader' else 'Command'} result]:\n{out}")
             else:
                 lines.append(f"[{m['speaker']}]: {m['text']}")
         if self._needs_title():

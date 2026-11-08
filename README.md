@@ -79,6 +79,23 @@ Your normal browser isn't involved.
 - The **Project** card (right panel) holds instructions both models follow in every chat of that project,
   and a default doc link for new chats. Deleting a project keeps its chats (they move to **Chats**).
 
+## Game files
+
+The models can read game files straight from your game folders, with no exporting on your side:
+Skyrim (.esp/.esm/.esl, .bsa, .strings, .nif, .pex), Baldur's Gate 3 (.pak, .loca, .lsx, and
+.lsf/.gr2 via LSLib), Cyberpunk 2077 (.archive, CR2W files, JSON via WolvenKit), The Witcher 3
+(.bundle, CR2W files, .ws scripts), Mass Effect (.pcc/.sfm/.upk packages, .tlk) and Dragon Age:
+Origins / II (.erf, GFF files), plus textures (.dds → .png) and any text file.
+
+- **Game folders:** the Apps card finds Steam, GOG and EA installs automatically; **Add folder…**
+  adds others (mod folders, extracted files). The models can only read inside these folders,
+  the code folder and Amalgam's workspace, and never change them.
+- **Install helpers** adds the optional extras: LSLib (BG3 .lsf/.gr2), WolvenKit CLI (Cyberpunk
+  JSON and file names), and the lz4 / zstandard / LZO libraries.
+- Cyberpunk archives and Mass Effect Legendary Edition packages use Oodle compression; Amalgam
+  borrows the Oodle DLL from the game's own folder, so add the game folder if it isn't found.
+- Dragon Age: Inquisition and The Veilguard use Frostbite, which needs Frosty Toolsuite instead.
+
 ## Blender
 
 The **Apps** card connects Blender:

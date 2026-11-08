@@ -259,6 +259,8 @@ class App:
         self.apps = apps
         self.blender_setup = apps.BlenderSetup(clean_env)
         self.orch.blender_path = apps.find_blender()[0]
+        self.games = {"detected": {}, "state": "idle", "log": []}
+        self._load_game_folders()
         self.server = ThreadingHTTPServer(("127.0.0.1", args.port), self._handler())
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/#t={self.token}"
@@ -366,6 +368,37 @@ class App:
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _load_game_folders(self, detect=True):
+        import gamefiles.tools as gt
+        from gamefiles import oodle
+        try:
+            user = json.loads(self.store.get_setting("game_folders_user", "[]"))
+        except ValueError:
+            user = []
+
+        def work():
+            if detect:
+                try:
+                    self.games["detected"] = gt.find_games()
+                except Exception as e:
+                    print("Game detection failed:", e)
+            folders = list(dict.fromkeys(list(self.games["detected"].values()) + user))
+            self.orch.game_folders = folders
+            oodle.add_search_dirs(folders)
+        self.games["user"] = user
+        threading.Thread(target=work, daemon=True).start()
+
+    def install_game_helpers(self):
+        if self.games["state"] == "running":
+            return
+        import gamefiles.tools as gt
+        self.games.update(state="running", log=[])
+
+        def work():
+            ok = gt.install(lambda t: (print("Game helpers:", t), self.games["log"].append(t)))
+            self.games["state"] = "done" if ok else "failed"
+        threading.Thread(target=work, daemon=True).start()
+
     def apps_view(self):
         path, ver = self.apps.find_blender() if not self.orch.blender_path else (self.orch.blender_path, None)
         if ver is None and path:
@@ -378,7 +411,10 @@ class App:
         if setup.state == "done" and getattr(self, "refresh_connections_later", False):
             self.refresh_connections_later = False
             self.refresh_connections()
-        return {"blender": {"path": path, "version": ver, "listening": self.apps.blender_listening(0.2),
+        import gamefiles.tools as gt
+        games = {"detected": self.games["detected"], "user": self.games.get("user", []),
+                 "helpers": gt.installed(), "state": self.games["state"], "log": self.games["log"][-14:]}
+        return {"games": games, "blender": {"path": path, "version": ver, "listening": self.apps.blender_listening(0.2),
                             "claude": conn.get("claude", False), "gpt": conn.get("gpt", False),
                             "on": self.orch.blender_on, "setup": {"state": setup.state, "log": setup.log[-12:]}}}
 
@@ -638,6 +674,7 @@ class App:
                         app.orch.new_chat(app.orch.project_id)
                     app.store.delete_chat(cid)
                     shutil.rmtree(os.path.join(WORKSPACE, "attachments", f"chat-{cid}"), ignore_errors=True)
+                    shutil.rmtree(os.path.join(WORKSPACE, "extracted", f"chat-{cid}"), ignore_errors=True)
                 elif path == "/api/chat/move":
                     pid = data.get("project_id")
                     app.store.move_chat(int(data["chat_id"]), int(pid) if pid else None)
@@ -667,6 +704,20 @@ class App:
                 elif path == "/api/apps/blender/toggle":
                     app.orch.blender_on = bool(data.get("on"))
                     app.store.set_setting("blender_on", "1" if app.orch.blender_on else "0")
+                elif path == "/api/games/add":
+                    folder = str(data.get("path") or "") or (pick_folder() or "")
+                    if folder and os.path.isdir(folder):
+                        user = list(dict.fromkeys(app.games.get("user", []) + [os.path.normpath(folder)]))
+                        app.store.set_setting("game_folders_user", json.dumps(user))
+                        app._load_game_folders(detect=False)
+                    elif folder:
+                        return self._json({"error": "That folder doesn't exist."}, 400)
+                elif path == "/api/games/remove":
+                    user = [u for u in app.games.get("user", []) if u != data.get("path")]
+                    app.store.set_setting("game_folders_user", json.dumps(user))
+                    app._load_game_folders(detect=False)
+                elif path == "/api/games/install-helpers":
+                    app.install_game_helpers()
                 elif path == "/api/apps/blender/recheck":
                     app.orch.blender_path = app.apps.find_blender()[0]
                     app.refresh_connections()

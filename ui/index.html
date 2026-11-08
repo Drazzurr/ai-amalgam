@@ -234,7 +234,11 @@
   .approvebar pre { margin: 0 0 8px; font: 12.5px/1.5 Consolas, monospace; white-space: pre-wrap; color: #8fe0b5; }
   .approvebar .row { display: flex; gap: 8px; align-items: center; } .approvebar .row small { color: var(--faint); margin-left: auto; }
   .av.Terminal, .av.ran { background: #2b2f38 !important; color: #8fe0b5 !important; font-size: 12px; }
-  .name.Terminal { color: #8fe0b5; }
+  .name.Terminal { color: #8fe0b5; } .name.Reader { color: #c79bf2; }
+  .av.Reader { background: #2b2f38 !important; color: #c79bf2 !important; }
+  .gamerow { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--quiet); padding: 2px 0; }
+  .gamerow span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .gamerow b { color: var(--ink); font-weight: 600; }
+  .gamerow button { color: var(--faint); font-size: 15px; padding: 0 4px; } .gamerow button:hover { color: #ef8b8b; }
   .codefield { display: flex; gap: 6px; } .codefield input { flex: 1; min-width: 0; }
   .allowed { display: flex; align-items: center; gap: 6px; font: 12.5px Consolas, monospace; color: #8fe0b5; padding: 3px 0; }
   .allowed span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -489,7 +493,7 @@
 const token = new URLSearchParams(location.hash.slice(1)).get("t") || "";
 const $ = id => document.getElementById(id);
 let lastId = 0, chatId = undefined, rounds = 4, roundsTouched = false, lastStatus = "idle";
-const initials = {You: "Y", Claude: "C", GPT: "G", Terminal: ">_", "You ran": ">_"};
+const initials = {You: "Y", Claude: "C", GPT: "G", Terminal: ">_", "You ran": ">_", Reader: "◇"};
 let commandsById = {}, termItems = [];
 function termHtml(text) {
   const lines = text.split("\n");
@@ -1182,7 +1186,7 @@ let appsSig = "";
 function renderApps(apps) {
   const b = apps && apps.blender;
   if (!b) return;
-  const sig = JSON.stringify(b);
+  const sig = JSON.stringify(apps);
   if (sig === appsSig) return;
   appsSig = sig;
   const line = (ok, yes, no) => `<div class="st"><span class="${ok ? "ok" : "no"}">${ok ? "●" : "○"}</span> ${ok ? yes : no}</div>`;
@@ -1198,6 +1202,24 @@ function renderApps(apps) {
     ${b.setup.log.length ? `<div class="setuplog">${b.setup.log.map(esc).join("\n")}</div>` : ""}
     <p class="help" style="margin:8px 0 0">${b.on ? "On: the models can see and change your open Blender scene and run Blender Python. Save your work first."
       : "Off. Turn on to let the models work in your open Blender. Claude makes changes; GPT inspects and reviews."}</p></div>`;
+  const g = apps.games || {detected: {}, user: [], helpers: {}, log: []};
+  const det = Object.entries(g.detected || {});
+  const h = g.helpers || {};
+  const helperLine = [["LSLib", h.lslib], ["WolvenKit", h.wolvenkit], ["lz4", h.lz4], ["zstd", h.zstandard], ["LZO", h.lzo]]
+    .map(([n, ok]) => `<span class="${ok ? "ok" : "no"}">${ok ? "●" : "○"}</span> ${n}`).join("&nbsp; ");
+  $("appsBox").insertAdjacentHTML("beforeend", `<div class="app" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+    <div><b>Game files</b><div class="st">The models can read these folders directly.</div></div>
+    <div style="margin-top:6px">${det.map(([n, p]) => `<div class="gamerow" title="${esc(p)}"><span><b>${esc(n)}</b> · ${esc(p)}</span></div>`).join("")}
+      ${(g.user || []).map(p => `<div class="gamerow" title="${esc(p)}"><span>${esc(p)}</span><button data-gdel="${esc(p)}" title="Remove">×</button></div>`).join("")}
+      ${!det.length && !(g.user || []).length ? `<div class="st">No game folders found yet. Add one below.</div>` : ""}</div>
+    <div class="st" style="margin-top:6px">Helpers: ${helperLine}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"><button class="btn" id="gameAdd">Add folder…</button>
+      <button class="btn ${h.lslib && h.wolvenkit ? "" : "go"}" id="gameHelpers" ${g.state === "running" ? "disabled" : ""}>${g.state === "running" ? "Installing…" : "Install helpers"}</button></div>
+    ${g.log && g.log.length ? `<div class="setuplog">${g.log.map(esc).join("\n")}</div>` : ""}
+    <p class="help" style="margin:8px 0 0">Skyrim, BG3, Cyberpunk, Witcher 3, Mass Effect and Dragon Age files: archives, plugins, packages, meshes, textures, text. Read-only.</p></div>`);
+  $("gameAdd").onclick = async () => { const r = await api("/api/games/add", {}); if (r.error) alert(r.error); appsSig = ""; };
+  $("gameHelpers").onclick = () => api("/api/games/install-helpers", {});
+  $("appsBox").querySelectorAll("[data-gdel]").forEach(x => x.onclick = () => { api("/api/games/remove", {path: x.dataset.gdel}); appsSig = ""; });
   $("blenderOn").onchange = () => {
     if ($("blenderOn").checked && !confirm("Give the models full access to Blender? They can change your scene and run Blender Python, which can also read and write files on your PC. Save your .blend files first.")) { $("blenderOn").checked = false; return; }
     api("/api/apps/blender/toggle", {on: $("blenderOn").checked});
