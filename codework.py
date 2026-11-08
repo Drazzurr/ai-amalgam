@@ -190,7 +190,7 @@ class Checkpoints:
             head = self._git(project_id, work_tree, "rev-parse", "--verify", "-q", "HEAD", check=False).strip()
             if head and not self._git(project_id, work_tree, "diff", "--cached", "--name-only", "HEAD").strip():
                 return head
-            self._git(project_id, work_tree, "commit", "-q", "--no-verify", "-m", message)
+            self._git(project_id, work_tree, "commit", "-q", "--no-verify", "--allow-empty", "-m", message)
             return self._git(project_id, work_tree, "rev-parse", "HEAD").strip()
 
     def changed_files(self, project_id, work_tree, before, after):
