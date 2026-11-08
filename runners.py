@@ -28,6 +28,7 @@ BILLING_VARS = [
 # Drive / Docs connectors on your Claude account. Nothing here can change or delete files.
 CLAUDE_READ_ONLY_TOOLS = [
     "Read", "Glob", "Grep",   # files you attach (saved in the app's workspace folder)
+    "Skill",                  # playbooks like world-bible-keeper (installed by the app)
     "WebSearch",
     "WebFetch",
     "mcp__claude_ai_Google_Drive__search_files",

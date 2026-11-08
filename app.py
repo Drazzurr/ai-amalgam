@@ -84,6 +84,36 @@ def find_app_browser():
     return None
 
 
+def install_skills():
+    """Copy the app's skills (for example world-bible-keeper) into Claude Code's and Codex's
+    personal skills folders, so both models follow the same playbooks. Only our own skill
+    folders are touched, and only when the bundled copy has changed."""
+    src_root = os.path.join(APP_DIR, "skills")
+    if not os.path.isdir(src_root):
+        return
+    home = os.path.expanduser("~")
+    for dest_root in (os.path.join(home, ".claude", "skills"), os.path.join(home, ".codex", "skills")):
+        for name in os.listdir(src_root):
+            src = os.path.join(src_root, name, "SKILL.md")
+            if not os.path.isfile(src):
+                continue
+            dest = os.path.join(dest_root, name, "SKILL.md")
+            try:
+                with open(src, "rb") as f:
+                    new = f.read()
+                old = None
+                if os.path.isfile(dest):
+                    with open(dest, "rb") as f:
+                        old = f.read()
+                if old != new:
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with open(dest, "wb") as f:
+                        f.write(new)
+                    print("Installed skill", name, "to", dest_root)
+            except OSError as e:
+                print("Couldn't install skill", name, "to", dest_root, ":", e)
+
+
 def open_window(url, force_browser=False):
     """Open the UI. Returns the window process (or None if we can't track it)."""
     if not force_browser:
@@ -450,6 +480,7 @@ class App:
         shutil.rmtree(OLD_WINDOW_PROFILE, ignore_errors=True)
         self.refresh_connections()
         if not self.args.demo:
+            install_skills()
             threading.Timer(6, self.check_update).start()
         print("AI Amalgam is running at", self.url)
         if self.billing_vars:
