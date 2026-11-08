@@ -26,6 +26,7 @@ NEXT
 DONE
 NEED USER: <one clear question>
 Use NEXT if the discussion should continue, DONE if the goal is fully met and you are happy with the result, and NEED USER when you need a decision, approval or clarification that only the user can give.
+When your NEED USER question has a few clear answers, list them just above that last line, one per line, as "CHOICE: <short answer>" (2 to 5 choices, each under 15 words, e.g. "CHOICE: Option A - rewrite each section"). The app shows them to the user as buttons; the user can still type their own answer.
 
 === TRANSCRIPT ===
 {transcript}
@@ -48,6 +49,11 @@ Project memory: when the user confirms a decision or a new fact worth keeping fo
 
 LIMIT_RE = re.compile(r"usage limit|rate limit|limit reached|hit your limit|reached your limit|quota|too many requests|try again (later|at|in)",
                       re.IGNORECASE)
+CHOICE_RE = re.compile(r"^\W*CHOICE\s*:\s*(.+?)\s*$", re.IGNORECASE)
+MAX_CHOICES = 6
+OPTION_RE = re.compile(r"\b(Option\s+[A-Z1-9])\b\s*(?:\(([^()]{1,160})\)|[:\-\u2013\u2014]\s*([^,;?()]{1,120}?)(?=\s*(?:,|;|\?|\bor\b|$)))?",
+                       re.IGNORECASE)
+YES_NO_RE = re.compile(r"^\s*(should|shall|do|does|did|can|could|would|will|is|are|may|approve|ok|okay|happy)\b", re.IGNORECASE)
 REMEMBER_RE = re.compile(r"^\W*REMEMBER\s*:\s*(.+?)\s*$", re.IGNORECASE)
 MEMORY_CHARS = 6000
 
@@ -100,6 +106,39 @@ def parse_signal(text):
             body = "\n".join(lines[:-1]).rstrip()
             return body or "(nothing to add)", signal, question
     return text.strip(), "NEXT", ""
+
+
+def split_choices(text):
+    """Pull 'CHOICE: ...' lines out of a reply. Returns (text without them, [choices])."""
+    keep, choices = [], []
+    for line in text.splitlines():
+        m = CHOICE_RE.match(line)
+        if m:
+            c = m.group(1).strip().strip("*_`").strip()
+            if c and c not in choices:
+                choices.append(c[:200])
+        else:
+            keep.append(line)
+    return "\n".join(keep), choices[:MAX_CHOICES]
+
+
+def guess_choices(question):
+    """Backup when a model forgot CHOICE lines: find 'Option A (...) or Option B (...)',
+    or offer Yes / No for a plain yes-or-no question."""
+    found, seen = [], set()
+    for m in OPTION_RE.finditer(question):
+        label = re.sub(r"\s+", " ", m.group(1)).title()
+        if label.lower() in seen:
+            continue
+        seen.add(label.lower())
+        detail = (m.group(2) or m.group(3) or "").strip()
+        found.append(f"{label} - {detail}" if detail else label)
+    if len(found) >= 2:
+        return found[:MAX_CHOICES]
+    q = question.strip()
+    if YES_NO_RE.match(q) and " or " not in q.lower() and q.endswith("?"):
+        return ["Yes", "No"]
+    return []
 
 
 class Orchestrator:
@@ -409,6 +448,7 @@ class Orchestrator:
         for edit in getattr(runner, "last_edits", []) or []:
             self.store.add_doc_edit(self.chat_id, self.project_id, edit["tool"], edit["doc_id"], edit["summary"])
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
+        reply, choices = split_choices(reply)
         body, signal, question = parse_signal(reply)
         keep, remembered = [], []
         for line in body.splitlines():
@@ -424,8 +464,10 @@ class Orchestrator:
             if saved:
                 self._note("Saved to project memory: " + "; ".join(saved))
         if signal == "NEED USER":
+            question = question or "(asked for your input)"
+            choices = choices or guess_choices(question)
             self.store.add(self.chat_id, runner.name, "question",
-                           question or "(asked for your input)")
+                           question + "".join(f"\nCHOICE: {c}" for c in choices))
             return "question"
         return signal
 

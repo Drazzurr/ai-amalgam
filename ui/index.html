@@ -94,6 +94,14 @@
               font-size: 13px; padding: 6px 14px; border-radius: 999px; white-space: pre-wrap; text-align: left; }
   .sys.long span { border-radius: 12px; }
   .ask { border: 1px solid rgba(240,178,50,.45); background: rgba(240,178,50,.08); border-radius: 12px; padding: 12px 14px; }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .choice { border: 1px solid rgba(240,178,50,.5); background: rgba(240,178,50,.10); color: var(--text); border-radius: 999px;
+    padding: 7px 14px; font-size: 14px; text-align: left; cursor: pointer; transition: background .15s, border-color .15s, opacity .15s; }
+  .choice:hover:not(:disabled) { background: rgba(240,178,50,.24); border-color: rgba(240,178,50,.85); }
+  .choice.own { background: transparent; border-style: dashed; color: var(--quiet); }
+  .choice.picked { background: rgba(240,178,50,.32); border-color: rgba(240,178,50,.95); font-weight: 600; }
+  .choice:disabled { cursor: default; opacity: .45; }
+  .choice.picked:disabled { opacity: 1; }
   .ask .tag { font-size: 12px; font-weight: 650; color: var(--ask); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
   #typing { display: none; }
   #typing.show { display: grid; animation: fadeUp .22s ease-out; }
@@ -359,18 +367,61 @@ function addMessage(m, animate) {
     div.innerHTML = `<span>${render(m.text)}</span>`;
   } else {
     div.className = "msg";
-    const inner = m.kind === "question"
-      ? `<div class="ask"><div class="tag">Needs your input</div><div class="body">${render(m.text)}</div></div>`
+    let askHtml = "";
+    if (m.kind === "question") {
+      const lines = m.text.split("\n"), choices = [];
+      const q = lines.filter(l => { const c = l.match(/^CHOICE:\s*(.+)$/); if (c) choices.push(c[1]); return !c; }).join("\n");
+      const btns = choices.length ? `<div class="choices">${choices.map(c =>
+          `<button class="choice" data-choice="${esc(c)}">${esc(c)}</button>`).join("")}<button class="choice own">Write my own…</button></div>` : "";
+      askHtml = `<div class="ask" data-speaker="${esc(m.speaker)}"><div class="tag">Needs your input</div><div class="body">${render(q)}</div>${btns}</div>`;
+    }
+    if (m.kind === "user") markPicked(m.text);
+    const inner = m.kind === "question" ? askHtml
       : `<div class="body">${render(m.text)}</div>`;
     div.innerHTML = `${av(m.speaker)}<div><div class="meta"><span class="name ${esc(m.speaker)}">${esc(m.speaker)}</span>
       <span class="time">${clock(m.created)}</span></div>${inner}</div>`;
   }
+  if (m.kind === "user") div.dataset.user = "1";
   if (animate && !(m.kind === "model" && streamedBy === m.speaker)) div.classList.add("enter");
   if (m.kind === "model" && streamedBy === m.speaker) { streamedBy = null; typingEl().classList.remove("show"); }
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
   log.insertBefore(div, typingEl());
   if (atBottom || m.kind !== "model") log.scrollTop = log.scrollHeight;
 }
+
+// Clickable answers: questions asked since your last message are "open".
+function openAsks() {
+  const all = [...$("log").querySelectorAll(".msg")];
+  let i = all.length - 1;
+  const open = [];
+  for (; i >= 0; i--) {
+    if (all[i].dataset.user) break;
+    const a = all[i].querySelector(".ask"); if (a) open.unshift(a);
+  }
+  return open;
+}
+function markPicked(text) {
+  for (const a of openAsks()) a.querySelectorAll(".choice[data-choice]").forEach(b => {
+    if (text.includes(b.dataset.choice)) b.classList.add("picked");
+  });
+}
+function refreshChoices(status) {
+  const open = status === "waiting" ? new Set(openAsks()) : new Set();
+  $("log").querySelectorAll(".ask").forEach(a => a.querySelectorAll(".choice").forEach(b => b.disabled = !open.has(a)));
+}
+$("log").addEventListener("click", e => {
+  const b = e.target.closest(".choice"); if (!b || b.disabled) return;
+  const ask = b.closest(".ask"), open = openAsks();
+  if (b.classList.contains("own")) { $("input").focus(); return; }
+  ask.querySelectorAll(".choice").forEach(x => x.classList.toggle("picked", x === b));
+  if (open.length <= 1 && !$("input").value.trim()) {     // the only question: answer straight away
+    $("input").value = b.dataset.choice; send(); return;
+  }
+  // several questions open (or you were already typing): collect the answers, then press send
+  const who = ask.dataset.speaker, line = `${who}: ${b.dataset.choice}`;
+  const kept = $("input").value.split("\n").filter(l => l.trim() && !l.startsWith(who + ": "));
+  $("input").value = [...kept, line].join("\n"); grow(); $("input").focus();
+});
 
 const activityText = {"starting": "getting ready", "writing": "is writing", "thinking": "is thinking"};
 let liveRev = -1;
@@ -671,6 +722,7 @@ async function poll() {
     $("editNote").className = cs.allow_edits ? "plain on" : "plain";
 
     renderLive(s);
+    refreshChoices(s.status);
     renderChips(s.pending_files);
     renderUpdate(s.update);
     renderEdits(s.doc_edits);

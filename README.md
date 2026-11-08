@@ -53,8 +53,8 @@ Your normal browser isn't involved.
 ## Using it
 - **Start a discussion:** type a goal, e.g. "Plan a weekend Python project that teaches me
   SQL. Agree on one plan." Claude speaks first, then GPT, and so on.
-- **When they need you:** a yellow box shows the question. Type your answer and send; the
-  discussion continues.
+- **When they need you:** a yellow box shows the question. When there are clear options, click
+  one of the buttons (or "Write my own…" to type an answer); the discussion continues.
 - **Ask just one model:** start your message with `@claude` or `@gpt` (one reply, no discussion).
 - **Max rounds** (right panel): one round = each model speaks once. Default is 4.
 - **Stop** halts the model that's currently thinking.

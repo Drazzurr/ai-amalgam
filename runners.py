@@ -217,13 +217,17 @@ CODEX_SPEED_ARGS = {"fast": ["-c", 'model_reasoning_effort="low"'], "balanced": 
 SIGNAL_TAIL_RE = re.compile(r"\n?\W*(NEXT|DONE|NEED USER\b.*)\W*$", re.IGNORECASE)
 
 
+CHOICE_LINE_RE = re.compile(r"^\W*CHOICE\s*:.*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
+
+
 def visible_text(text):
     """Text for the live preview: hide the NEXT/DONE/NEED USER control line at the end,
     including a half-typed one like 'NE'."""
     text = SIGNAL_TAIL_RE.sub("", text.rstrip()).rstrip()
+    text = CHOICE_LINE_RE.sub("", text).rstrip()
     head, _, last = text.rpartition("\n")
     tail = last.strip().strip("*_`").upper()
-    if tail and any(sig.startswith(tail) for sig in ("NEXT", "DONE", "NEED USER")):
+    if tail and any(sig.startswith(tail) or tail.startswith("CHOICE") for sig in ("NEXT", "DONE", "NEED USER", "CHOICE")):
         return head.rstrip()
     return text
 
@@ -709,7 +713,8 @@ class DemoRunner(Runner):
             "then check the result against the doc before moving on.",
         ]
         if self.turns == 2 and self.key == "gpt":
-            lines.append("NEED USER: Should we aim for speed or for polish first?")
+            lines += ["CHOICE: Speed first", "CHOICE: Polish first", "CHOICE: A bit of both",
+                      "NEED USER: Should we aim for speed or for polish first?"]
         elif self.turns >= 4:
             lines.append("DONE")
         else:
