@@ -46,6 +46,27 @@ def check_code_dir(path):
     return real, None
 
 
+def projects_root():
+    """Where Amalgam makes code folders for you: Documents\\AI Amalgam Projects."""
+    home = os.path.expanduser("~")
+    docs = os.path.join(home, "Documents")
+    return os.path.join(docs if os.path.isdir(docs) else home, "AI Amalgam Projects")
+
+
+def make_code_folder(project_name):
+    """Create a new, empty folder named after the project (adding (2), (3)... if it's taken)."""
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", project_name or "").strip().rstrip(". ") or "Project"
+    name = re.sub(r"\s+", " ", name)[:60]
+    root = projects_root()
+    os.makedirs(root, exist_ok=True)
+    path, n = os.path.join(root, name), 1
+    while os.path.exists(path):
+        n += 1
+        path = os.path.join(root, f"{name} ({n})")
+    os.makedirs(path)
+    return path
+
+
 def inside(root, rel):
     """Absolute path of rel inside root, or None if it would leave the folder."""
     full = os.path.realpath(os.path.join(root, rel))

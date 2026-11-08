@@ -371,7 +371,8 @@
     <div class="sublabel">Memory <span class="hint">facts the models saved after you confirmed them</span></div>
     <textarea id="projMem" class="field area" placeholder="Empty so far. When you confirm a decision, the models add it here, and every chat in this project starts from it. You can edit it too."></textarea>
     <div class="sublabel">Code folder <span class="hint">turns on the coding area</span></div>
-    <div class="codefield"><input id="projCode" class="field" placeholder="C:\Users\you\Projects\my-app" spellcheck="false"><button class="btn" id="pickCode">Choose…</button></div>
+    <div class="codefield"><input id="projCode" class="field" placeholder="No folder yet" spellcheck="false"><button class="btn" id="pickCode" title="Use a folder you already have">Choose…</button></div>
+    <div class="codefield" style="margin-top:6px"><button class="btn go" id="makeCode" style="flex:1" title="Makes a new folder in Documents\AI Amalgam Projects">Create a folder for me</button><button class="btn" id="openCode" title="Open the folder in File Explorer">Open</button></div>
     <p class="err2" id="codeErr" style="display:none"></p>
     <p class="help">Saved automatically. Every chat in this project gets these.</p>
   </div>
@@ -716,6 +717,7 @@ function renderSidebar(s) {
   }
   // project settings card
   $("projCard").style.display = proj ? "" : "none";
+  if (proj) { $("openCode").style.display = proj.code_dir ? "" : "none"; $("makeCode").textContent = proj.code_dir ? "Make a new folder" : "Create a folder for me"; }
   if (proj) {
     const fields = {projName: proj.name, projInstr: proj.instructions, projDoc: proj.doc_link,
                     roleClaude: (proj.roles || {}).claude || "", roleGpt: (proj.roles || {}).gpt || "", projMem: proj.memory || "",
@@ -1008,6 +1010,14 @@ $("pickCode").onclick = async () => {
   if (r.error) return alert(r.error);
   if (r.path) { $("projCode").value = r.path; saveCode(r.path); }
 };
+$("makeCode").onclick = async () => {
+  if (!projFormFor) return;
+  if ($("projCode").value && !confirm("This project already has a code folder. Make a new, empty one and switch to it? (The old folder isn't deleted.)")) return;
+  const r = await api("/api/project/make-code-folder", {project_id: projFormFor});
+  if (r.error) return alert(r.error);
+  $("projCode").value = r.path; $("codeErr").style.display = "none";
+};
+$("openCode").onclick = () => api("/api/code/open-folder", {});
 async function saveCode(path) {
   if (!projFormFor) return;
   const r = await api("/api/project/update", {project_id: projFormFor, code_dir: path});

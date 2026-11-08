@@ -450,6 +450,24 @@ class App:
                     app.store.update_project(int(data["project_id"]), data.get("name"),
                                              data.get("instructions"), data.get("doc_link"),
                                              data.get("memory"), roles if isinstance(roles, dict) else None)
+                elif path == "/api/project/make-code-folder":
+                    from codework import make_code_folder
+                    pid = int(data["project_id"])
+                    proj = app.store.project(pid)
+                    if not proj:
+                        return self._json({"error": "Project not found."}, 404)
+                    try:
+                        folder = make_code_folder(proj["name"])
+                    except OSError as e:
+                        return self._json({"error": f"Couldn't create the folder: {e}"}, 500)
+                    app.store.update_project(pid, code_dir=folder)
+                    return self._json({"ok": True, "path": folder})
+                elif path == "/api/code/open-folder":
+                    folder = app.orch.code_dir()
+                    if folder and sys.platform == "win32":
+                        os.startfile(folder)
+                    elif folder:
+                        webbrowser.open("file://" + folder)
                 elif path == "/api/pick-folder":
                     folder = pick_folder()
                     if folder is None:

@@ -81,8 +81,9 @@ Your normal browser isn't involved.
 
 ## Coding area
 
-Give a project a **code folder** (Project card → Code folder → Choose…). Pick a folder for just
-that project, like your app's folder, not your whole Documents folder. Chats in that project then
+Give a project a **code folder** in the Project card: **Create a folder for me** makes a new one
+in `Documents\AI Amalgam Projects\<project name>`, or **Choose…** uses a folder you already have
+(one just for that project, not your whole Documents folder). **Open** shows it in File Explorer. Chats in that project then
 get a **Chat | Code** switch at the top.
 
 - **Claude (Claude Code) is the editor.** It can create and change files, but only inside the
