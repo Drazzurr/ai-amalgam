@@ -1,0 +1,7 @@
+# your data stays on your PC
+amalgam.db
+amalgam.db-journal
+amalgam.log
+workspace/
+__pycache__/
+*.pyc

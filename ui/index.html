@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Amalgam</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --bg: #1a1b1e; --side: #141517; --raised: #24262a; --raised2: #2c2e33; --line: #2e3035;
+    --ink: #ecedef; --quiet: #9b9da3; --faint: #6c6e75;
+    --you: #6c8cff; --claude: #e07a55; --gpt: #1fbf85; --ask: #f0b232;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 15px/1.55 "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+         background: var(--bg); color: var(--ink); display: grid; grid-template-columns: 260px 1fr 280px; overflow: hidden; }
+  ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: #33353b; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+
+  /* ---------- left sidebar ---------- */
+  aside { background: var(--side); display: flex; flex-direction: column; padding: 14px 10px; min-height: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; font-weight: 650; font-size: 16px; }
+  .logo { width: 30px; height: 30px; flex: none; }
+  .newchat { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 10px;
+             background: var(--raised); border: 1px solid var(--line); font-weight: 550; }
+  .newchat:hover { background: var(--raised2); }
+  .label { font-size: 11.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); padding: 18px 10px 6px; }
+  .chatlist { overflow-y: auto; flex: 1; min-height: 0; }
+  .chatlist #projects button, .chatlist #chats button { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--quiet);
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  .chatlist #projects button:hover, .chatlist #chats button:hover { background: var(--raised); color: var(--ink); }
+  .chatlist #projects button.on, .chatlist #chats button.on { background: var(--raised2); color: var(--ink); }
+  .chatlist .none { color: var(--faint); font-size: 13px; padding: 6px 10px; }
+  .lrow { display: flex; align-items: center; justify-content: space-between; padding-right: 4px; }
+  .iconbtn { width: 22px; height: 22px; border-radius: 6px; color: var(--quiet); font-size: 17px; line-height: 1; display: grid; place-items: center; }
+  .iconbtn:hover { background: var(--raised); color: var(--ink); }
+  .newproj { display: none; padding: 0 2px 6px; } .newproj.show { display: block; }
+  .proj { margin-bottom: 2px; }
+  .projrow { display: flex !important; align-items: center; gap: 8px; color: var(--ink) !important; font-weight: 550; }
+  .projrow svg { flex: none; color: var(--quiet); }
+  .projrow .cnt { margin-left: auto; font-size: 11.5px; color: var(--faint); font-weight: 400; }
+  .projchats button { padding-left: 34px !important; font-size: 13.5px !important; }
+  .projchats .newin { color: var(--faint) !important; font-size: 13px !important; }
+  .field.area { min-height: 92px; resize: vertical; margin-top: 8px; font-family: inherit; line-height: 1.45; }
+  .crumb { color: var(--faint); font-weight: 500; }
+  .sublabel { font-size: 11.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 14px 0 6px; }
+  .sublabel .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .crow { position: relative; }
+  .crow .acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--raised); border-radius: 6px; }
+  .crow:hover .acts, .crow.on .acts { display: flex; }
+  .crow .acts span { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--quiet); cursor: pointer; font-size: 13px; }
+  .crow .acts span:hover { color: var(--ink); background: var(--raised2); }
+  .crow .acts span.del:hover { color: #f08a84; }
+  .crow input { width: 100%; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid #44474e; border-radius: 8px; padding: 7px 9px; outline: 0; }
+  .movesel { margin-left: 10px; font: inherit; font-size: 12.5px; color: var(--quiet); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; max-width: 180px; }
+  .upd { padding: 8px 12px 0; font-size: 12px; color: var(--faint); }
+  .upd button { color: var(--quiet); font-size: 12px; } .upd button:hover { color: var(--ink); text-decoration: underline; }
+  .upd .new { display: block; margin: 0 0 8px; background: rgba(108,140,255,.12); border: 1px solid rgba(108,140,255,.45);
+              color: var(--ink); border-radius: 10px; padding: 8px 10px; font-size: 13px; text-align: left; width: 100%; }
+  .upd .new b { color: var(--you); }
+  .upd .err { color: #f08a84; display: block; margin-bottom: 4px; }
+  .quit { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 10px; color: var(--quiet); font-size: 14px; margin-top: 8px; }
+  .quit:hover { background: rgba(229,83,75,.12); color: #f08a84; }
+  .closed { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 10; place-items: center; text-align: center; }
+  .closed.show { display: grid; }
+  .closed h2 { margin: 16px 0 6px; font-size: 22px; } .closed p { color: var(--quiet); margin: 0; }
+  .logo.big { width: 64px; height: 64px; margin: 0 auto; display: block; }
+
+  /* ---------- main column ---------- */
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+  header { height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+  header .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .faces { display: flex; margin-left: auto; }
+  .faces .av { width: 26px; height: 26px; font-size: 12px; margin-left: -6px; box-shadow: 0 0 0 2px var(--bg); }
+  .faces .av.off { opacity: .35; }
+  #log { flex: 1; overflow-y: auto; padding: 18px 0 8px; }
+  .msg { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 8px 32px; max-width: 920px; margin: 0 auto; }
+  .msg:hover { background: rgba(255,255,255,.02); }
+  .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 15px; color: #fff; flex: none; }
+  .av.You { background: var(--you); } .av.Claude { background: var(--claude); } .av.GPT { background: var(--gpt); }
+  .meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .name { font-weight: 650; } .name.You { color: var(--you); } .name.Claude { color: var(--claude); } .name.GPT { color: var(--gpt); }
+  .time { font-size: 12px; color: var(--faint); }
+  .body { white-space: pre-wrap; word-wrap: break-word; color: #dcdde0; }
+  .body pre { background: #111214; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto;
+              white-space: pre; font-size: 13px; margin: 8px 0; }
+  .body code { font-family: "Cascadia Code", Consolas, ui-monospace, monospace; font-size: 13px; background: #111214; padding: 1px 5px; border-radius: 5px; }
+  .body pre code { background: none; padding: 0; }
+  .sys { text-align: center; padding: 10px 32px; }
+  .sys span { display: inline-block; max-width: 640px; background: var(--raised); border: 1px solid var(--line); color: var(--quiet);
+              font-size: 13px; padding: 6px 14px; border-radius: 999px; white-space: pre-wrap; text-align: left; }
+  .sys.long span { border-radius: 12px; }
+  .ask { border: 1px solid rgba(240,178,50,.45); background: rgba(240,178,50,.08); border-radius: 12px; padding: 12px 14px; }
+  .ask .tag { font-size: 12px; font-weight: 650; color: var(--ask); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  #typing { display: none; }
+  #typing.show { display: grid; animation: fadeUp .22s ease-out; }
+  #typing .act { color: var(--faint); font-size: 12.5px; }
+  #typing .act::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin: 0 6px 1px 0;
+                         background: var(--quiet); animation: pulse 1.2s infinite; }
+  #typing .body:not(:empty)::after { content: ""; display: inline-block; width: 7px; height: 15px; margin-left: 2px;
+                         vertical-align: -2px; background: var(--quiet); border-radius: 2px; animation: caret 1s steps(2) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .msg.enter, .sys.enter { animation: fadeUp .25s ease-out; }
+  .speed { display: inline-flex; margin-top: 5px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .speed button { font-size: 11.5px; padding: 2px 8px; border-radius: 6px; color: var(--quiet); }
+  .speed button:hover { color: var(--ink); }
+  .speed button.on { background: var(--raised2); color: var(--ink); font-weight: 600; }
+  .dots { display: inline-flex; gap: 4px; padding: 10px 0 4px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--quiet); animation: blink 1.2s infinite; }
+  .dots i:nth-child(2) { animation-delay: .2s; } .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+  .empty { max-width: 640px; margin: 14vh auto 0; text-align: center; padding: 0 24px; }
+  .empty .duo { display: flex; justify-content: center; margin-bottom: 18px; }
+  .empty .duo .av { width: 48px; height: 48px; font-size: 20px; margin: 0 -5px; box-shadow: 0 0 0 4px var(--bg); }
+  .empty h2 { font-size: 26px; font-weight: 650; margin: 0 0 6px; }
+  .empty p { color: var(--quiet); margin: 0 0 24px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .chips button { background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 13.5px; color: #cfd0d4; }
+  .chips button:hover { background: var(--raised2); color: var(--ink); }
+
+  /* ---------- composer ---------- */
+  .composer { flex: none; padding: 8px 32px 22px; }
+  .chips2 { max-width: 856px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips2:not(:empty) { margin-bottom: 8px; }
+  .fchip { display: inline-flex; align-items: center; gap: 6px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px;
+           padding: 5px 6px 5px 10px; font-size: 13px; color: #cfd0d4; max-width: 280px; }
+  .fchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fchip button { width: 20px; height: 20px; border-radius: 6px; color: var(--quiet); }
+  .fchip button:hover { background: var(--raised2); color: var(--ink); }
+  .fchip.busy { opacity: .6; }
+  .clip { background: transparent; color: var(--quiet); width: 34px !important; height: 38px !important; }
+  .clip:hover { color: var(--ink); }
+  main.drop::after { content: "Drop files to attach"; position: absolute; inset: 12px; border: 2px dashed var(--you); border-radius: 16px;
+           background: rgba(108,140,255,.08); display: grid; place-items: center; font-size: 18px; color: var(--ink); z-index: 5; pointer-events: none; }
+  .edit { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .edit:last-child { border-bottom: 0; }
+  .edit .when { color: var(--faint); font-size: 11.5px; display: flex; justify-content: space-between; }
+  .edit .what { color: #dcdde0; margin-top: 2px; }
+  .linkbtn { color: var(--you); font-size: 11.5px; }
+  .linkbtn:hover { text-decoration: underline; }
+  .box { max-width: 856px; margin: 0 auto; background: var(--raised); border: 1px solid var(--line); border-radius: 18px;
+         display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 6px; transition: border-color .15s; }
+  .box:focus-within { border-color: #44474e; }
+  textarea { flex: 1; font: inherit; color: var(--ink); background: transparent; border: 0; outline: 0; resize: none;
+             max-height: 220px; min-height: 26px; padding: 7px 0; line-height: 1.5; }
+  textarea::placeholder { color: var(--faint); }
+  .round { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none; transition: background .15s, opacity .15s; }
+  #sendBtn { background: var(--ink); color: #111; }
+  #sendBtn:disabled { opacity: .3; cursor: default; }
+  #stopBtn { background: var(--raised2); color: var(--ink); display: none; }
+  #stopBtn.show { display: grid; }
+  .hint { max-width: 856px; margin: 6px auto 0; font-size: 12px; color: var(--faint); text-align: center; }
+  .hint b { color: var(--quiet); font-weight: 600; }
+
+  /* ---------- right panel ---------- */
+  .right { background: var(--side); padding: 14px 14px; overflow-y: auto; }
+  .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 12px; }
+  .card h3 { margin: 0 0 10px; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); }
+  .mrow { display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
+  .mrow .av { width: 32px; height: 32px; font-size: 14px; }
+  .mrow .who { flex: 1; min-width: 0; }
+  .mrow .who b { display: block; font-weight: 600; }
+  .mrow .who small { display: flex; align-items: center; gap: 6px; color: var(--quiet); font-size: 12px; }
+  .mrow .who small::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gpt); flex: none; }
+  .mrow .who small.bad::before { background: #e5534b; }
+  .mrow .who small.demo::before { background: var(--ask); }
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: #3a3c42; border-radius: 999px; transition: background .15s; cursor: pointer; }
+  .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked + span { background: var(--you); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+  .field { width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+           border-radius: 10px; padding: 8px 10px; outline: 0; }
+  .field:focus { border-color: #44474e; }
+  .mrow .who small.plain::before { display: none; }
+  .mrow .who small.on { color: var(--ask); }
+  .cardhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cardhead h3 { margin: 0; }
+  .mini { font-size: 12px; color: var(--quiet); border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; }
+  .mini:hover { color: var(--ink); border-color: #44474e; }
+  .mini:disabled { opacity: .5; cursor: default; }
+  .cgroup { margin-bottom: 10px; } .cgroup:last-child { margin-bottom: 0; }
+  .cgroup .gname { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .cgroup .gname .av { width: 18px; height: 18px; font-size: 10px; }
+  .citem { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px 26px; font-size: 13px; }
+  .citem .d { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
+  .citem .d.connected { background: var(--gpt); } .citem .d.needs { background: var(--ask); } .citem .d.failed { background: #e5534b; }
+  .citem .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .citem .st { color: var(--faint); font-size: 11.5px; }
+  .badge { font-size: 10.5px; font-weight: 600; letter-spacing: .03em; padding: 1px 6px; border-radius: 6px; background: var(--bg); color: var(--quiet); border: 1px solid var(--line); }
+  .badge.edit { color: var(--ask); border-color: rgba(240,178,50,.45); }
+  .cnote { font-size: 12px; color: var(--faint); padding: 2px 0 0 26px; margin: 0; }
+  .ublock { margin-bottom: 12px; } .ublock:last-child { margin-bottom: 0; }
+  .uhead { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .uhead .av { width: 18px; height: 18px; font-size: 10px; }
+  .uhead .mini { margin-left: auto; font-weight: 400; }
+  .urow { padding-left: 26px; margin-bottom: 7px; font-size: 12.5px; }
+  .urow .top { display: flex; justify-content: space-between; color: var(--quiet); margin-bottom: 3px; }
+  .urow .top b { color: var(--ink); font-weight: 600; }
+  .bar { height: 6px; border-radius: 99px; background: var(--bg); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 99px; background: var(--gpt); }
+  .bar i.warn { background: var(--ask); } .bar i.bad { background: #e5534b; }
+  .pill { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 99px; }
+  .pill.ok { background: rgba(31,191,133,.14); color: var(--gpt); }
+  .pill.warn { background: rgba(240,178,50,.14); color: var(--ask); }
+  .pill.bad { background: rgba(229,83,75,.15); color: #f08a84; }
+  .pill.unk { background: var(--bg); color: var(--quiet); }
+  .unote { padding-left: 26px; font-size: 12px; color: var(--faint); margin: 2px 0 0; }
+  .stepper { display: flex; align-items: center; justify-content: space-between; }
+  .stepper .ctl { display: flex; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  .stepper .ctl button { width: 32px; height: 32px; font-size: 18px; color: var(--quiet); }
+  .stepper .ctl button:hover { color: var(--ink); }
+  .stepper .ctl output { min-width: 26px; text-align: center; font-weight: 650; }
+  .help { font-size: 13px; color: var(--quiet); margin: 10px 0 0; }
+  .help code { background: var(--bg); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; color: var(--ink); }
+  .tips p { margin: 0 0 8px; font-size: 13px; color: var(--quiet); }
+  .banner { border: 1px solid rgba(240,178,50,.45); background: rgba(240,178,50,.08); color: #f3d79a; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+
+  @media (max-width: 1100px) { body { grid-template-columns: 220px 1fr; } .right { display: none; } }
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><svg class="logo" viewBox="0 0 140 140" aria-hidden="true"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="9"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="9"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>AI Amalgam</div>
+  <button class="newchat" id="newBtn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    New chat</button>
+  <div class="chatlist">
+    <div class="label lrow">Projects<button class="iconbtn" id="newProjBtn" title="New project">+</button></div>
+    <div id="newProjRow" class="newproj"><input id="newProjName" class="field" placeholder="Project name, then Enter" maxlength="80"></div>
+    <div id="projects"></div>
+    <div class="label">Chats</div>
+    <div id="chats"></div>
+  </div>
+  <div class="upd" id="upd"></div>
+  <button class="quit" id="quitBtn" title="Close AI Amalgam">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9M6.4 6.4a8 8 0 1 0 11.2 0"/></svg>
+    Quit AI Amalgam</button>
+</aside>
+<div class="closed" id="closed"><div><svg class="logo big" viewBox="0 0 140 140" aria-hidden="true"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg><h2>AI Amalgam has closed</h2><p>You can close this window. Start it again from the desktop shortcut.</p></div></div>
+
+<main>
+  <header>
+    <div class="title" id="title">New chat</div>
+    <select id="moveSel" class="movesel" title="Move this chat to a project" style="display:none"></select>
+    <div class="faces" id="faces"></div>
+  </header>
+  <div id="log"></div>
+  <div class="composer">
+    <div class="chips2" id="fileChips"></div>
+    <div class="box">
+      <button class="round clip" id="clipBtn" title="Attach files (or drag them onto the chat)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg></button>
+      <input type="file" id="fileInput" multiple style="display:none">
+      <textarea id="input" rows="1" placeholder="Message Claude and GPT…"></textarea>
+      <button class="round" id="stopBtn" title="Stop">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>
+      <button class="round" id="sendBtn" title="Send (Enter)" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    </div>
+    <div class="hint" id="hint"><b>Enter</b> to send · <b>Shift+Enter</b> for a new line · <b>@claude</b> or <b>@gpt</b> to ask just one</div>
+  </div>
+</main>
+
+<div class="right">
+  <div id="banners"></div>
+  <div class="card">
+    <h3>In this chat</h3>
+    <div id="models"></div>
+  </div>
+  <div class="card" id="projCard" style="display:none">
+    <div class="cardhead"><h3>Project</h3><button class="mini" id="delProj">Delete</button></div>
+    <input id="projName" class="field" placeholder="Project name" maxlength="80">
+    <textarea id="projInstr" class="field area" placeholder="Instructions both models always follow in this project (setting, tone, rules, what matters)…"></textarea>
+    <input id="projDoc" class="field" placeholder="Default doc link for new chats…" spellcheck="false" style="margin-top:8px">
+    <div class="sublabel">Roles</div>
+    <input id="roleClaude" class="field" placeholder="Claude's role, e.g. lore keeper and editor" maxlength="300">
+    <input id="roleGpt" class="field" placeholder="GPT's role, e.g. critic: plot holes and rules" maxlength="300" style="margin-top:6px">
+    <div class="sublabel">Memory <span class="hint">facts the models saved after you confirmed them</span></div>
+    <textarea id="projMem" class="field area" placeholder="Empty so far. When you confirm a decision, the models add it here, and every chat in this project starts from it. You can edit it too."></textarea>
+    <p class="help">Saved automatically. Every chat in this project gets these.</p>
+  </div>
+  <div class="card" id="editsCard" style="display:none">
+    <h3>Doc edits</h3>
+    <div id="edits"></div>
+    <p class="help">To undo an edit: open the doc, then File → Version history.</p>
+  </div>
+  <div class="card">
+    <h3>Plan usage</h3>
+    <div id="usage"><p class="help" style="margin:0">Checking…</p></div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Connections</h3><button class="mini" id="refreshConn">Refresh</button></div>
+    <div id="conns"><p class="help" style="margin:0">Checking…</p></div>
+  </div>
+  <div class="card">
+    <h3>Project doc</h3>
+    <input id="docLink" class="field" placeholder="Paste a Google Doc or Drive link…" spellcheck="false">
+    <div class="mrow" style="padding-top:10px">
+      <div class="who"><b>Allow doc edits</b><small class="plain" id="editNote">Claude can read docs only</small></div>
+      <label class="switch"><input type="checkbox" id="allowEdits"><span></span></label>
+    </div>
+    <p class="help">Both Claude and GPT can read your Drive. Only Claude edits: with edits on, it shows you the exact change and waits for your OK.</p>
+  </div>
+  <div class="card">
+    <h3>Discussion</h3>
+    <div class="stepper">
+      <span>Max rounds</span>
+      <div class="ctl"><button id="minus">−</button><output id="rounds">4</output><button id="plus">+</button></div>
+    </div>
+    <p class="help">One round = each model speaks once. They also stop when someone asks you a question, or when everyone agrees it's done.</p>
+  </div>
+  <div class="card tips">
+    <h3>Tips</h3>
+    <p>Type while they're talking. They'll see your message on the next turn.</p>
+    <p>Use <code>@claude</code> or <code>@gpt</code> for a single quick reply.</p>
+    <p>Reply "continue" to extend a discussion that hit its round limit.</p>
+  </div>
+</div>
+
+<script>
+const token = new URLSearchParams(location.hash.slice(1)).get("t") || "";
+const $ = id => document.getElementById(id);
+let lastId = 0, chatId = undefined, rounds = 4, roundsTouched = false, lastStatus = "idle";
+const initials = {You: "Y", Claude: "C", GPT: "G"};
+
+async function api(path, data) {
+  const opts = data === undefined ? {headers: {"X-Token": token}}
+    : {method: "POST", headers: {"X-Token": token, "Content-Type": "application/json"}, body: JSON.stringify(data)};
+  return (await fetch(path, opts)).json();
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+function render(text) {
+  return text.split(/```[^\n]*\n?/).map((p, i) => i % 2 ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>`
+    : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>")).join("");
+}
+const av = (who, cls = "") => `<div class="av ${esc(who)} ${cls}">${initials[who] || esc(who[0] || "?")}</div>`;
+const clock = t => new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+
+function typingEl() {
+  let t = $("typing");
+  if (!t) { t = document.createElement("div"); t.id = "typing"; t.className = "msg"; $("log").appendChild(t); }
+  return t;
+}
+let streamedBy = null;   // speaker whose reply was just shown live (its final message appears without a fade)
+function addMessage(m, animate) {
+  const log = $("log");
+  const empty = log.querySelector(".empty"); if (empty) empty.remove();
+  const div = document.createElement("div");
+  if (m.kind === "system") {
+    div.className = "sys" + (m.text.length > 90 ? " long" : "");
+    div.innerHTML = `<span>${render(m.text)}</span>`;
+  } else {
+    div.className = "msg";
+    const inner = m.kind === "question"
+      ? `<div class="ask"><div class="tag">Needs your input</div><div class="body">${render(m.text)}</div></div>`
+      : `<div class="body">${render(m.text)}</div>`;
+    div.innerHTML = `${av(m.speaker)}<div><div class="meta"><span class="name ${esc(m.speaker)}">${esc(m.speaker)}</span>
+      <span class="time">${clock(m.created)}</span></div>${inner}</div>`;
+  }
+  if (animate && !(m.kind === "model" && streamedBy === m.speaker)) div.classList.add("enter");
+  if (m.kind === "model" && streamedBy === m.speaker) { streamedBy = null; typingEl().classList.remove("show"); }
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
+  log.insertBefore(div, typingEl());
+  if (atBottom || m.kind !== "model") log.scrollTop = log.scrollHeight;
+}
+
+const activityText = {"starting": "getting ready", "writing": "is writing", "thinking": "is thinking"};
+let liveRev = -1;
+function renderLive(s) {
+  const t = typingEl(), log = $("log");
+  if (!(s.status === "running" && s.speaker && s.live)) { t.classList.remove("show"); liveRev = -1; return; }
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
+  if (t.dataset.speaker !== s.speaker || !t.classList.contains("show")) {
+    t.dataset.speaker = s.speaker;
+    t.innerHTML = `${av(s.speaker)}<div><div class="meta"><span class="name ${esc(s.speaker)}">${esc(s.speaker)}</span>
+      <span class="act"></span></div><div class="dots"><i></i><i></i><i></i></div><div class="body"></div></div>`;
+    t.classList.add("show");
+    liveRev = -1;
+  }
+  if (s.live.rev === liveRev) return;
+  liveRev = s.live.rev;
+  const a = s.live.activity || "thinking";
+  t.querySelector(".act").textContent = (activityText[a] || a) + "…";
+  const text = s.live.text || "";
+  t.querySelector(".dots").style.display = text ? "none" : "";
+  t.querySelector(".body").innerHTML = text ? render(text) : "";
+  if (text) streamedBy = s.speaker;
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+const ideas = [
+  "Plan a weekend project that teaches me SQL. Agree on one plan.",
+  "Debate: should my next PC build prioritise GPU or CPU for modding and gaming?",
+  "Design the save system for a small indie RPG. Ask me anything you need.",
+];
+let projectsById = {};
+function showEmpty(projectId) {
+  const p = projectsById[projectId];
+  $("log").innerHTML = `<div class="empty"><div class="duo">${av("Claude")}${av("GPT")}</div>
+    <h2>${p ? esc(p.name) : "What should we work on?"}</h2>
+    <p>${p ? "New chat in this project. Both models get the project's instructions and doc." :
+      "Give Claude and GPT a goal. They'll talk it through together and check with you on the decisions."}</p>
+    <div class="chips">${ideas.map(i => `<button>${esc(i)}</button>`).join("")}</div></div>`;
+  $("log").querySelectorAll(".chips button").forEach(b => b.onclick = () => { $("input").value = b.textContent; grow(); $("input").focus(); });
+  typingEl();
+}
+
+const speedHelp = {fast: "Quickest replies, lighter thinking; uses less of your plan",
+  balanced: "The tool's normal setting", best: "Most careful replies; slower and uses more of your plan"};
+function renderModels(models) {
+  $("models").innerHTML = models.map(m => {
+    const cls = m.status === "ready" ? "" : m.status.startsWith("demo") || m.status.startsWith("resting") ? "demo" : "bad";
+    const speed = ["fast", "balanced", "best"].map(sp =>
+      `<button class="${m.speed === sp ? "on" : ""}" data-speed="${sp}" data-model="${m.key}" title="${speedHelp[sp]}">${sp[0].toUpperCase() + sp.slice(1)}</button>`).join("");
+    return `<div class="mrow" style="align-items:flex-start">${av(m.name)}<div class="who"><b>${esc(m.name)}</b><small class="${cls}">${esc(m.status)}</small>
+      <div class="speed">${speed}</div></div>
+      <label class="switch" style="margin-top:4px"><input type="checkbox" data-key="${m.key}" ${m.enabled ? "checked" : ""}><span></span></label></div>`;
+  }).join("");
+  $("models").querySelectorAll("[data-speed]").forEach(b => b.onclick = () =>
+    api("/api/settings", {speeds: {[b.dataset.model]: b.dataset.speed}}));
+  $("models").querySelectorAll("input").forEach(cb => cb.onchange = () => api("/api/settings", {enabled: {[cb.dataset.key]: cb.checked}}));
+  $("faces").innerHTML = models.map(m => av(m.name, m.enabled ? "" : "off")).join("");
+}
+
+const statusLabel = {"connected": "", "needs sign-in": "needs sign-in", "failed": "not working", "check failed": "unchecked", "disabled": "off", "unknown": ""};
+const statusClass = {"connected": "connected", "needs sign-in": "needs", "failed": "failed", "check failed": "needs"};
+function renderConnections(conn, models, cs) {
+  $("refreshConn").disabled = conn.checking;
+  $("refreshConn").textContent = conn.checking ? "Checking…" : "Refresh";
+  if (!conn.checked_at) { $("conns").innerHTML = `<p class="help" style="margin:0">Checking what each model is connected to…</p>`; return; }
+  $("conns").innerHTML = models.map(m => {
+    const g = (conn.models || {})[m.key] || {items: [], error: null};
+    let rows = g.items.map(it => {
+      const google = /^google (drive|docs)$/i.test(it.name);
+      const canEdit = m.key === "claude" && cs.allow_edits;
+      const badge = google && it.status === "connected"
+        ? `<span class="badge ${canEdit ? "edit" : ""}">${canEdit ? "READ + EDIT" : "READ"}</span>` : "";
+      const st = statusLabel[it.status] || "";
+      const tip = it.verified ? "Worked in a chat this session" : it.status === "check failed"
+        ? "The quick start-up check didn't get an answer. It often still works in chats." : it.source;
+      return `<div class="citem" title="${esc(tip)}"><span class="d ${statusClass[it.status] || ""}"></span>
+        <span class="n">${esc(it.name)}</span>${st ? `<span class="st">${esc(st)}</span>` : ""}${badge}</div>`;
+    }).join("");
+    if (g.error) rows += `<p class="cnote">Couldn't check: ${esc(g.error)}</p>`;
+    else if (!g.items.length) rows += m.key === "gpt"
+      ? `<p class="cnote">No other tools set up.</p>`
+      : `<p class="cnote">No connections found.</p>`;
+    if (m.key === "claude" && !g.error) rows += `<div class="citem"><span class="d connected"></span><span class="n">Web search</span><span class="badge">READ</span></div>`;
+    return `<div class="cgroup"><div class="gname">${av(m.name)}${esc(m.name)}</div>${rows}</div>`;
+  }).join("");
+}
+
+function until(t) {
+  if (!t) return "";
+  const s = t - Date.now() / 1000;
+  if (s <= 0) return "now";
+  if (s < 3600) return `in ${Math.max(1, Math.round(s / 60))} min`;
+  if (s < 86400) { const mins = Math.round(s / 60), h = Math.floor(mins / 60), m = mins % 60; return `in ${h}h${m ? " " + m + "m" : ""}`; }
+  return new Date(t * 1000).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"});
+}
+function winName(w, mins) {
+  if (mins) return mins <= 360 ? `${Math.round(mins / 60)}-hour limit` : mins >= 10000 ? "Weekly limit" : `${Math.round(mins / 1440)}-day limit`;
+  return w === "primary" ? "Short-term limit" : "Weekly limit";
+}
+function bar(pct) {
+  const p = Math.max(0, Math.min(100, +pct || 0));
+  return `<div class="bar"><i class="${p >= 90 ? "bad" : p >= 70 ? "warn" : ""}" style="width:${100 - p}%"></i></div>`;
+}
+function renderUsage(usage, models) {
+  const ms = (usage || {}).models || {};
+  if (!usage || !usage.checked_at) { $("usage").innerHTML = `<p class="help" style="margin:0">Checking…</p>`; return; }
+  $("usage").innerHTML = models.map(m => {
+    const u = ms[m.key] || {};
+    let body = "";
+    if (u.kind === "percent") {
+      const rows = ["primary", "secondary"].filter(k => u[k]).map(k => {
+        const w = u[k], pct = w.used_percent == null ? null : Math.round(w.used_percent);
+        const reset = w.reset_since ? "reset since last check" : w.resets_at ? "resets " + until(w.resets_at) : "";
+        return `<div class="urow"><div class="top"><span>${winName(k, w.window_minutes)}</span><b>${pct == null ? "?" : 100 - pct + "% left"}</b></div>
+          ${bar(pct)}<div class="top" style="margin-top:3px"><span>${esc(reset)}</span></div></div>`;
+      }).join("");
+      body = rows || `<p class="unote">No usage info yet. It appears after GPT's first reply.</p>`;
+    } else if (u.kind === "status") {
+      const st = (u.status || "").toLowerCase();
+      const pill = !st ? `<span class="pill unk">Not checked yet</span>`
+        : st.includes("reject") || st.includes("exceed") || st.includes("limited") ? `<span class="pill bad">Limit reached</span>`
+        : st.includes("warn") ? `<span class="pill warn">Near limit</span>` : `<span class="pill ok">OK</span>`;
+      const rows = (u.windows || []).map(w => {
+        const pct = typeof w.used_percent === "number" ? Math.round(w.used_percent) : null;
+        const name = /seven|week/i.test(w.window) ? "Weekly limit" : /five|hour|session/i.test(w.window) ? "Session (5-hour)" : "Limit";
+        return `<div class="urow"><div class="top"><span>${name}</span><b>${pct == null ? "" : 100 - pct + "% left"}</b></div>
+          ${pct != null ? bar(pct) : ""}<div class="top" style="margin-top:3px"><span>${w.resets_at ? "resets " + esc(until(w.resets_at)) : ""}</span></div></div>`;
+      }).join("");
+      body = `<div class="urow"><div class="top"><span>${pill}</span><span></span></div></div>${rows}
+        ${!st ? `<p class="unote">Status appears after Claude's first reply.</p>` : ""}`;
+    } else if (u.error) {
+      body = `<p class="unote">Couldn't read usage: ${esc(u.error)}</p>`;
+    }
+    body += `<p class="unote">In this app: ${u.turns_5h || 0} replies in 5 h · ${u.turns_7d || 0} this week</p>`;
+    const link = u.link ? `<button class="mini" data-url="${esc(u.link)}">Details ↗</button>` : "";
+    return `<div class="ublock"><div class="uhead">${av(m.name)}${esc(m.name)}${link}</div>${body}</div>`;
+  }).join("");
+  $("usage").querySelectorAll("[data-url]").forEach(b => b.onclick = () => api("/api/open-url", {url: b.dataset.url}));
+}
+
+const folder = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+let openProjects = new Set(), sidebarSig = "", projFormFor = null, renaming = false;
+let currentChat = null;
+function renderSidebar(s) {
+  currentChat = s.chat_id;
+  const current = s.chats.find(c => c.id === s.chat_id);
+  const proj = projectsById[s.project_id];
+  $("title").innerHTML = (proj ? `<span class="crumb">${esc(proj.name)} › </span>` : "") + esc(current ? current.title : "New chat");
+  if (s.project_id) openProjects.add(s.project_id);
+  const sig = JSON.stringify([s.chats, s.projects.map(p => [p.id, p.name]), s.chat_id, s.project_id, [...openProjects]]);
+  if (sig !== sidebarSig && !renaming) {
+    sidebarSig = sig;
+    const btn = c => `<div class="crow ${c.id === s.chat_id ? "on" : ""}"><button data-id="${c.id}" class="${c.id === s.chat_id ? "on" : ""}" title="${esc(c.title)}" style="padding-right:${c.id === s.chat_id ? 60 : 10}px">${esc(c.title)}</button>
+      <div class="acts"><span data-ren="${c.id}" title="Rename">✎</span><span class="del" data-del="${c.id}" title="Delete chat">🗑</span></div></div>`;
+    $("projects").innerHTML = s.projects.length ? s.projects.map(p => {
+      const chats = s.chats.filter(c => c.project_id === p.id), open = openProjects.has(p.id);
+      const here = s.project_id === p.id && !s.chat_id;
+      return `<div class="proj"><button class="projrow ${here ? "on" : ""}" data-proj="${p.id}" title="${esc(p.name)}">${folder}
+        <span style="overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</span><span class="cnt">${chats.length || ""}</span></button>
+        ${open ? `<div class="projchats"><button class="newin" data-newin="${p.id}">+ New chat in project</button>${chats.map(btn).join("")}</div>` : ""}</div>`;
+    }).join("") : `<div class="none">Group chats into projects with +</div>`;
+    const loose = s.chats.filter(c => !c.project_id);
+    $("chats").innerHTML = loose.length ? loose.map(btn).join("") : `<div class="none">Your chats will show up here.</div>`;
+    document.querySelectorAll("#projects [data-id], #chats [data-id]").forEach(b => b.onclick = () => api("/api/open", {chat_id: +b.dataset.id}));
+    document.querySelectorAll("[data-newin]").forEach(b => b.onclick = () => api("/api/new", {project_id: +b.dataset.newin}));
+    document.querySelectorAll("[data-del]").forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      const c = s.chats.find(x => x.id === +b.dataset.del);
+      if (c && confirm(`Delete the chat "${c.title}"? This can't be undone.`)) api("/api/chat/delete", {chat_id: c.id}).then(() => { sidebarSig = ""; });
+    });
+    document.querySelectorAll("[data-ren]").forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      const row = b.closest(".crow"), c = s.chats.find(x => x.id === +b.dataset.ren);
+      renaming = true;
+      row.innerHTML = `<input value="${esc(c.title)}" maxlength="80">`;
+      const inp = row.querySelector("input"); inp.focus(); inp.select();
+      const done = save => { if (!renaming) return; renaming = false;
+        (save && inp.value.trim() ? api("/api/chat/rename", {chat_id: c.id, title: inp.value}) : Promise.resolve()).then(() => { sidebarSig = ""; }); };
+      inp.addEventListener("keydown", ev => { if (ev.key === "Enter") done(true); if (ev.key === "Escape") done(false); });
+      inp.addEventListener("blur", () => done(true));
+    });
+    document.querySelectorAll("[data-proj]").forEach(b => b.onclick = () => {
+      const id = +b.dataset.proj;
+      if (openProjects.has(id) && s.project_id === id) openProjects.delete(id); else openProjects.add(id);
+      sidebarSig = "";
+      if (s.project_id !== id) api("/api/new", {project_id: id}); else renderSidebar(s);
+    });
+  }
+  // move-to-project selector (only for saved chats)
+  const ms = $("moveSel");
+  ms.style.display = s.chat_id && s.projects.length ? "" : "none";
+  const msSig = JSON.stringify([s.chat_id, s.project_id, s.projects.map(p => [p.id, p.name])]);
+  if (ms.dataset.sig !== msSig && document.activeElement !== ms) {
+    ms.dataset.sig = msSig;
+    ms.innerHTML = `<option value="">No project</option>` + s.projects.map(p =>
+      `<option value="${p.id}" ${p.id === s.project_id ? "selected" : ""}>📁 ${esc(p.name)}</option>`).join("");
+  }
+  // project settings card
+  $("projCard").style.display = proj ? "" : "none";
+  if (proj) {
+    const fields = {projName: proj.name, projInstr: proj.instructions, projDoc: proj.doc_link,
+                    roleClaude: (proj.roles || {}).claude || "", roleGpt: (proj.roles || {}).gpt || "", projMem: proj.memory || ""};
+    for (const [id, val] of Object.entries(fields))
+      if (document.activeElement !== $(id) && (projFormFor !== proj.id || $(id).dataset.v !== val)) { $(id).value = val; $(id).dataset.v = val; }
+    projFormFor = proj.id;
+  }
+}
+
+let uploading = [];
+async function uploadFiles(list) {
+  for (const f of list) {
+    uploading.push(f.name); renderChips(lastPending);
+    try {
+      const r = await fetch("/api/upload?name=" + encodeURIComponent(f.name), {method: "POST", headers: {"X-Token": token}, body: f});
+      const j = await r.json();
+      if (j.error) alert(j.error);
+    } catch (e) { alert("Couldn't attach " + f.name); }
+    uploading.splice(uploading.indexOf(f.name), 1);
+  }
+  renderChips(lastPending); grow();
+}
+let lastPending = [], chipsSig = "";
+function renderChips(pending) {
+  lastPending = pending || [];
+  const sig = JSON.stringify([lastPending, uploading]);
+  if (sig === chipsSig) return;
+  chipsSig = sig;
+  $("fileChips").innerHTML = lastPending.map((n, i) => `<div class="fchip">📎 <span title="${esc(n)}">${esc(n)}</span><button data-un="${i}" title="Remove">×</button></div>`).join("")
+    + uploading.map(n => `<div class="fchip busy">⏳ <span>${esc(n)}</span></div>`).join("");
+  $("fileChips").querySelectorAll("[data-un]").forEach(b => b.onclick = () => api("/api/unattach", {index: +b.dataset.un}));
+  $("sendBtn").disabled = !$("input").value.trim() && !lastPending.length;
+}
+let editsSig = "";
+function renderEdits(edits) {
+  const sig = JSON.stringify(edits);
+  if (sig === editsSig) return;
+  editsSig = sig;
+  $("editsCard").style.display = edits && edits.length ? "" : "none";
+  $("edits").innerHTML = (edits || []).map(e => {
+    const when = new Date(e.created * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+    const link = e.doc_id ? `<button class="linkbtn" data-doc="${esc(e.doc_id)}">Open doc ↗</button>` : "";
+    return `<div class="edit"><div class="when"><span>${when}</span>${link}</div><div class="what">${esc(e.summary)}</div></div>`;
+  }).join("");
+  $("edits").querySelectorAll("[data-doc]").forEach(b => b.onclick = () =>
+    api("/api/open-url", {url: "https://docs.google.com/document/d/" + b.dataset.doc + "/edit"}));
+}
+
+let updSig = "";
+function renderUpdate(u) {
+  if (!u) return;
+  const sig = JSON.stringify(u);
+  if (sig === updSig) return;
+  updSig = sig;
+  let html = "";
+  if (u.state === "installing") html = `<span>Downloading and installing the update…</span>`;
+  else if (u.state === "restarting") html = `<span>Updated to v${esc(u.installed || u.latest)}. Restarting…</span>`;
+  else {
+    if (u.available) html += `<button class="new" id="updNow"><b>Update available: v${esc(u.latest)}</b><br>Click to install. Your chats and settings are kept.</button>`;
+    if (u.error) html += `<span class="err">${esc(u.error)}</span>`;
+    html += `v${esc(u.current)} · <button id="updCheck">${u.state === "checking" ? "Checking…" : u.checked_at && !u.available && !u.error ? "Up to date ✓" : "Check for updates"}</button>`;
+  }
+  $("upd").innerHTML = html;
+  if ($("updCheck")) $("updCheck").onclick = () => api("/api/update/check", {});
+  if ($("updNow")) $("updNow").onclick = () => { restartingNow = true; api("/api/update/install", {}); };
+}
+let restartingNow = false;
+
+let modelsSig = "", connSig = "", usageSig = "";
+async function poll() {
+  try {
+    const s = await api("/api/state?after=" + lastId);
+    projectsById = Object.fromEntries((s.projects || []).map(p => [p.id, p]));
+    const viewKey = s.chat_id + "|" + s.project_id;
+    if (viewKey !== chatId) {
+      chatId = viewKey; lastId = 0;
+      const full = await api("/api/state?after=0");
+      $("log").innerHTML = "";
+      if (!full.messages.length) showEmpty(s.project_id); else typingEl();
+      full.messages.forEach(addMessage);
+      if (full.messages.length) lastId = full.messages[full.messages.length - 1].id;
+      $("log").scrollTop = $("log").scrollHeight;
+    } else {
+      s.messages.forEach(m => { addMessage(m, true); lastId = m.id; });
+    }
+    const restingNames = s.resting || {};
+    const models = s.models.map(m => restingNames[m.name] ? {...m, status: "resting until " + new Date(restingNames[m.name] * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})} : m);
+    const sig = JSON.stringify(models);
+    if (sig !== modelsSig) { modelsSig = sig; renderModels(models); }
+    if (!roundsTouched) { rounds = s.max_rounds; $("rounds").textContent = rounds; }
+    const cs = s.chat_settings || {doc_link: "", allow_edits: false};
+    const usig = JSON.stringify([s.usage, s.models, Math.floor(Date.now() / 60000)]);
+    if (usig !== usageSig) { usageSig = usig; renderUsage(s.usage, s.models); }
+    const csig = JSON.stringify([s.connections, s.models, cs.allow_edits]);
+    if (csig !== connSig) { connSig = csig; renderConnections(s.connections || {}, s.models, cs); }
+    if (document.activeElement !== $("docLink") && $("docLink").value !== cs.doc_link) $("docLink").value = cs.doc_link;
+    $("allowEdits").checked = cs.allow_edits;
+    $("editNote").textContent = cs.allow_edits ? "On: Claude edits after you approve" : "Off: Claude can read docs only";
+    $("editNote").className = cs.allow_edits ? "plain on" : "plain";
+
+    renderLive(s);
+    renderChips(s.pending_files);
+    renderUpdate(s.update);
+    renderEdits(s.doc_edits);
+    $("stopBtn").classList.toggle("show", s.status === "running");
+    $("input").placeholder = s.status === "waiting" ? "Answer the question to continue…"
+      : s.status === "running" ? "Add something to the discussion…" : "Message Claude and GPT…";
+    lastStatus = s.status;
+
+    renderSidebar(s);
+
+    let banners = "";
+    if (s.demo) banners += `<div class="banner">Demo mode: these are stand-in models, not the real Claude and GPT.</div>`;
+    if (s.billing_vars.length) banners += `<div class="banner">Found ${esc(s.billing_vars.join(", "))} on this PC. The app ignores them, so you stay on your subscriptions.</div>`;
+    $("banners").innerHTML = banners;
+    failures = 0;
+  } catch (e) {
+    if (++failures >= 3) { showClosed(); return; }
+  }
+  setTimeout(poll, lastStatus === "running" ? 200 : 800);
+}
+let failures = 0, closing = false;
+function showClosed() {
+  if (restartingNow) {
+    $("closed").querySelector("h2").textContent = "Updated! AI Amalgam is restarting…";
+    $("closed").querySelector("p").textContent = "A fresh window opens in a few seconds. You can close this one.";
+  }
+  $("closed").classList.add("show"); try { window.close(); } catch (e) {}
+}
+
+function grow() {
+  const i = $("input"); i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 220) + "px";
+  $("sendBtn").disabled = !i.value.trim() && !lastPending.length;
+}
+async function send() {
+  let text = $("input").value.trim();
+  if (uploading.length) return;
+  if (!text && lastPending.length) text = "I've attached some files.";
+  if (!text) return;
+  $("input").value = ""; grow();
+  await api("/api/send", {text});
+}
+$("input").addEventListener("input", grow);
+$("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+$("sendBtn").onclick = send;
+$("stopBtn").onclick = () => api("/api/stop", {});
+$("newBtn").onclick = () => api("/api/new", {});
+$("refreshConn").onclick = () => api("/api/refresh-connections", {});
+$("clipBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = () => { uploadFiles([...$("fileInput").files]); $("fileInput").value = ""; };
+const mainEl = document.querySelector("main");
+let dragDepth = 0;
+mainEl.addEventListener("dragenter", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); dragDepth++; mainEl.classList.add("drop"); } });
+mainEl.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+mainEl.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; mainEl.classList.remove("drop"); } });
+mainEl.addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; mainEl.classList.remove("drop"); if (e.dataTransfer.files.length) uploadFiles([...e.dataTransfer.files]); });
+$("newProjBtn").onclick = () => { $("newProjRow").classList.toggle("show"); $("newProjName").value = ""; $("newProjName").focus(); };
+$("newProjName").addEventListener("keydown", async e => {
+  if (e.key === "Escape") $("newProjRow").classList.remove("show");
+  if (e.key !== "Enter" || !$("newProjName").value.trim()) return;
+  const r = await api("/api/project/new", {name: $("newProjName").value});
+  $("newProjRow").classList.remove("show");
+  if (r.project_id) openProjects.add(r.project_id);
+  sidebarSig = "";
+});
+const saveProj = field => () => projFormFor && api("/api/project/update", {project_id: projFormFor, [field]: $({name: "projName", instructions: "projInstr", doc_link: "projDoc"}[field]).value});
+$("projName").addEventListener("change", saveProj("name"));
+$("projInstr").addEventListener("change", saveProj("instructions"));
+$("projDoc").addEventListener("change", saveProj("doc_link"));
+$("projMem").addEventListener("change", () => projFormFor && api("/api/project/update", {project_id: projFormFor, memory: $("projMem").value}));
+const saveRoles = () => projFormFor && api("/api/project/update", {project_id: projFormFor, roles: {claude: $("roleClaude").value, gpt: $("roleGpt").value}});
+$("roleClaude").addEventListener("change", saveRoles);
+$("roleGpt").addEventListener("change", saveRoles);
+$("moveSel").addEventListener("change", () => api("/api/chat/move", {chat_id: currentChat, project_id: $("moveSel").value ? +$("moveSel").value : null}).then(() => { sidebarSig = ""; $("moveSel").blur(); }));
+$("delProj").onclick = () => {
+  if (projFormFor && confirm("Delete this project? Its chats are kept and move to the main chat list."))
+    api("/api/project/delete", {project_id: projFormFor}).then(() => { sidebarSig = ""; api("/api/new", {}); });
+};
+$("docLink").addEventListener("change", () => api("/api/chat-settings", {doc_link: $("docLink").value}));
+$("docLink").addEventListener("keydown", e => { if (e.key === "Enter") $("docLink").blur(); });
+$("allowEdits").onchange = () => api("/api/chat-settings", {allow_edits: $("allowEdits").checked});
+$("quitBtn").onclick = async () => {
+  closing = true;
+  try { await api("/api/quit", {}); } catch (e) {}
+  showClosed();
+};
+// Tell the app when this window closes, so it can shut itself down.
+window.addEventListener("pagehide", () => { if (!closing) navigator.sendBeacon("/api/bye?t=" + encodeURIComponent(token)); });
+function setRounds(n) { rounds = Math.max(1, Math.min(20, n)); roundsTouched = true; $("rounds").textContent = rounds; api("/api/settings", {max_rounds: rounds}); }
+$("minus").onclick = () => setRounds(rounds - 1);
+$("plus").onclick = () => setRounds(rounds + 1);
+showEmpty();
+poll();
+$("input").focus();
+</script>
+</body>
+</html>
