@@ -114,6 +114,56 @@ def install_skills():
                 print("Couldn't install skill", name, "to", dest_root, ":", e)
 
 
+def toast(title, body):
+    """A Windows notification (bottom-right pop-up with sound). Silently does nothing elsewhere."""
+    if sys.platform != "win32":
+        print("Notify:", title, "-", body)
+        return
+    import base64
+    from xml.sax.saxutils import escape
+    xml = (f"<toast><visual><binding template='ToastGeneric'><text>{escape(title)}</text>"
+           f"<text>{escape(body)}</text></binding></visual></toast>")
+    script = (
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;"
+        "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;"
+        "$x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml(@'\n" + xml + "\n'@);"
+        "$t = [Windows.UI.Notifications.ToastNotification]::new($x);"
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("
+        "'{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show($t)")
+    try:
+        subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                          base64.b64encode(script.encode("utf-16-le")).decode()],
+                         creationflags=NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        print("Notification failed:", e)
+
+
+def list_skills():
+    """Skills Claude Code can use: the ones that come with AI Amalgam plus any you added yourself."""
+    found = {}
+    roots = [(os.path.join(APP_DIR, "skills"), "AI Amalgam"),
+             (os.path.join(os.path.expanduser("~"), ".claude", "skills"), "yours")]
+    for root, source in roots:
+        try:
+            names = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(root, name, "SKILL.md")
+            if name in found or not os.path.isfile(path):
+                continue
+            desc = ""
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    head = f.read(3000)
+                m = re.search(r"^description:\s*(.+)$", head, re.M)
+                desc = m.group(1).strip().strip('"') if m else ""
+            except OSError:
+                pass
+            found[name] = {"name": name, "description": desc[:220], "source": source}
+    return list(found.values())
+
+
 def pick_folder():
     """Show Windows' folder picker (runs on the app's side, so it can return a real path)."""
     try:
@@ -203,9 +253,30 @@ class App:
         self._usage_busy = False
         self._last_status = 0
         self._usage_again = False
+        self.focused_at = 0        # last time the window said it was in front
         self.server = ThreadingHTTPServer(("127.0.0.1", args.port), self._handler())
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/#t={self.token}"
+
+    def _notifier(self):
+        """Pop up a Windows notification when the models need you or finish, if you're not looking."""
+        prev = self.orch.status
+        while not self.quit_event.wait(1):
+            st = self.orch.status
+            if prev == "running" and st != "running" and self.store.get_setting("notify", "1") == "1" \
+                    and time.time() - self.focused_at > 3:
+                o = self.orch
+                if o.pending_commands:
+                    toast("AI Amalgam: approve a command?", f"{o.pending_commands['speaker']} wants to run: "
+                          + "; ".join(o.pending_commands["commands"])[:120])
+                elif st == "waiting":
+                    toast("AI Amalgam needs you", "A question is waiting for your answer.")
+                elif o.hint == "error":
+                    toast("AI Amalgam paused", "A model couldn't reply. Open the app to retry.")
+                elif o.hint in ("done", "limit"):
+                    toast("AI Amalgam", "The discussion finished." if o.hint == "done"
+                          else "The models reached the round limit.")
+            prev = st
 
     def quit(self):
         self.quit_event.set()
@@ -219,6 +290,24 @@ class App:
             info = self.updater.check()
             self.update = dict(info, state="idle", checked_at=time.time())
             print("Update check:", info)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def rollback(self):
+        if self.update.get("state") in ("installing", "restarting"):
+            return
+        self.update = dict(self.update, state="installing")
+
+        def work():
+            try:
+                old = self.updater.rollback()
+                print("Went back to version", old)
+                self.update = dict(self.update, state="restarting", installed=old)
+                self.updater.restart_later(self.args_list)
+                time.sleep(1.5)
+                self.quit()
+            except Exception as e:
+                self.update = dict(self.update, state="idle", error=f"Couldn't go back: {e}")
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -372,10 +461,15 @@ class App:
                     return self._json({"ok": True})
                 if url.path == "/api/state":
                     app.last_seen = time.time()
-                    after = int(parse_qs(url.query).get("after", ["0"])[0] or 0)
+                    q = parse_qs(url.query)
+                    if q.get("focused", ["0"])[0] == "1":
+                        app.focused_at = time.time()
+                    after = int(q.get("after", ["0"])[0] or 0)
                     state = app.orch.state()
                     msgs = app.store.messages(state["chat_id"]) if state["chat_id"] else []
                     state["messages"] = [m for m in msgs if m["id"] > after]
+                    if q.get("lite", ["0"])[0] == "1":   # quick refresh while models talk
+                        return self._json(state)
                     state["chats"] = app.store.chats()
                     state["projects"] = app.store.projects()
                     state["demo"] = app.args.demo
@@ -384,8 +478,18 @@ class App:
                     app.refresh_usage(force=app.orch.turn_seq != app._last_status)
                     app._last_status = app.orch.turn_seq
                     state["usage"] = app.usage
-                    state["update"] = app.update
+                    state["update"] = dict(app.update, rollback=app.updater.last_backup()[1])
+                    state["notify"] = app.store.get_setting("notify", "1") == "1"
+                    state["check_questions"] = app.orch.check_questions
+                    state["skills"] = list_skills()
+                    state["skills_off"] = app.orch.skills_off()
+                    try:
+                        state["ui_collapsed"] = json.loads(app.store.get_setting("ui_collapsed", "null"))
+                    except ValueError:
+                        state["ui_collapsed"] = None
                     return self._json(state)
+                if url.path == "/api/search":
+                    return self._json({"results": app.store.search(parse_qs(url.query).get("q", [""])[0])})
                 if url.path.startswith("/api/code/"):
                     return self._code_get(url)
                 self._json({"error": "not found"}, 404)
@@ -521,7 +625,29 @@ class App:
                 elif path == "/api/open":
                     app.orch.open_chat(int(data["chat_id"]))
                 elif path == "/api/settings":
-                    app.orch.settings(data.get("max_rounds"), data.get("enabled"), data.get("speeds"))
+                    app.orch.settings(data.get("max_rounds"), data.get("enabled"), data.get("speeds"),
+                                      data.get("check_questions"), data.get("notify"))
+                elif path == "/api/skills/toggle":
+                    app.orch.set_skill(str(data.get("name", "")), bool(data.get("on")))
+                elif path == "/api/ui":
+                    if isinstance(data.get("collapsed"), list):
+                        app.store.set_setting("ui_collapsed", json.dumps([str(x) for x in data["collapsed"]][:20]))
+                elif path == "/api/resume":
+                    app.orch.resume()
+                elif path == "/api/regenerate":
+                    err = app.orch.regenerate()
+                    if err:
+                        return self._json({"error": err}, 400)
+                elif path == "/api/edit-last":
+                    err = app.orch.edit_last(str(data.get("text", "")).strip())
+                    if err:
+                        return self._json({"error": err}, 400)
+                elif path == "/api/open-link":
+                    link = str(data.get("url", ""))
+                    if re.match(r"https?://", link):
+                        webbrowser.open(link)
+                elif path == "/api/update/rollback":
+                    app.rollback()
                 elif path == "/api/update/check":
                     app.check_update()
                 elif path == "/api/update/install":
@@ -570,6 +696,7 @@ class App:
         with open(LOCK_FILE, "w", encoding="utf-8") as f:
             json.dump({"port": self.port, "token": self.token, "pid": os.getpid()}, f)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self._notifier, daemon=True).start()
         shutil.rmtree(OLD_WINDOW_PROFILE, ignore_errors=True)
         self.refresh_connections()
         if not self.args.demo:

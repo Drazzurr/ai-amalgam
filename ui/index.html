@@ -84,7 +84,24 @@
   .meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
   .name { font-weight: 650; } .name.You { color: var(--you); } .name.Claude { color: var(--claude); } .name.GPT { color: var(--gpt); }
   .time { font-size: 12px; color: var(--faint); }
-  .body { white-space: pre-wrap; word-wrap: break-word; color: #dcdde0; }
+  .body { word-wrap: break-word; color: #dcdde0; }
+  .body p { margin: 0 0 8px; } .body > :last-child { margin-bottom: 0; }
+  .body h3, .body h4, .body h5, .body h6 { margin: 14px 0 6px; line-height: 1.3; color: var(--ink); }
+  .body h3 { font-size: 17px; } .body h4 { font-size: 15.5px; } .body h5, .body h6 { font-size: 14.5px; }
+  .body > h3:first-child, .body > h4:first-child { margin-top: 2px; }
+  .body ul, .body ol { margin: 4px 0 10px; padding-left: 24px; } .body li { margin: 2px 0; } .body li > ul, .body li > ol { margin: 2px 0; }
+  .body blockquote { margin: 6px 0 10px; padding: 2px 0 2px 12px; border-left: 3px solid #3a3d44; color: var(--quiet); }
+  .body hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .body a { color: #8ea8ff; text-decoration: none; } .body a:hover { text-decoration: underline; }
+  .tablewrap { overflow-x: auto; margin: 6px 0 10px; }
+  .body table { border-collapse: collapse; font-size: 14px; } .body th, .body td { border: 1px solid var(--line); padding: 5px 10px; text-align: left; vertical-align: top; }
+  .body th { background: var(--raised); }
+  .codeblock { margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #111214; }
+  .codeblock .cbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 4px 12px; font-size: 12px; color: var(--faint); border-bottom: 1px solid var(--line); }
+  .codeblock pre { margin: 0 !important; border: 0 !important; border-radius: 0 !important; }
+  .copy { font-size: 12px; color: var(--quiet); padding: 2px 8px; border-radius: 6px; } .copy:hover { background: var(--raised2); color: var(--ink); }
+  .msg .meta .tools { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+  .msg:hover .meta .tools { opacity: 1; }
   .body pre { background: #111214; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto;
               white-space: pre; font-size: 13px; margin: 8px 0; }
   .body code { font-family: "Cascadia Code", Consolas, ui-monospace, monospace; font-size: 13px; background: #111214; padding: 1px 5px; border-radius: 5px; }
@@ -131,6 +148,31 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   .chips button { background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 13.5px; color: #cfd0d4; }
   .chips button:hover { background: var(--raised2); color: var(--ink); }
+
+  /* ---------- extras ---------- */
+  .sys span p { margin: 0; }
+  .search { margin: 10px 0 0; } .search input { width: 100%; }
+  #results button { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--ink); font-size: 13.5px; }
+  #results button:hover { background: var(--raised); }
+  #results small { display: block; color: var(--faint); font-size: 12px; margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  #results .rp { color: var(--faint); font-size: 12px; margin-left: 6px; }
+  .resumebar { display: none; max-width: 856px; margin: 0 auto 8px; text-align: center; } .resumebar.show { display: block; }
+  .msg .tools button { font-size: 12px; color: var(--faint); padding: 1px 7px; border-radius: 6px; }
+  .msg .tools button:hover { background: var(--raised2); color: var(--ink); }
+  .msg .tools [data-act="edit"], .msg .tools [data-act="regen"] { display: none; }
+  .msg.lastuser .tools [data-act="edit"], .msg.canregen .tools [data-act="regen"] { display: inline-block; }
+  .menuwrap { position: relative; }
+  .menu { display: none; position: absolute; right: 0; top: 34px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 4px; z-index: 20; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .menu.show { display: block; } .menu button { display: block; width: 100%; text-align: left; padding: 7px 10px; border-radius: 7px; font-size: 13.5px; }
+  .menu button:hover { background: var(--raised2); }
+  .card[data-card] h3 { cursor: pointer; user-select: none; }
+  .card[data-card] h3::after { content: "▾"; margin-left: 6px; font-size: 10px; opacity: .6; }
+  .card.collapsed h3::after { content: "▸"; }
+  .card.collapsed { padding-bottom: 2px; }
+  .card.collapsed > :not(h3):not(.cardhead) { display: none !important; }
+  .card.collapsed .cardhead { margin-bottom: 10px; } .card.collapsed .cardhead > :not(h3) { display: none; }
+  .skill small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; display: block; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0 0; font-size: 13.5px; }
 
   /* ---------- coding area ---------- */
   .tabs { display: none; gap: 2px; background: var(--side); border: 1px solid var(--line); border-radius: 9px; padding: 2px; flex: none; }
@@ -300,12 +342,16 @@
   <button class="newchat" id="newBtn">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     New chat</button>
+  <div class="search"><input id="search" class="field" placeholder="Search chats  (Ctrl+K)" spellcheck="false"></div>
   <div class="chatlist">
+    <div id="results" style="display:none"></div>
+    <div id="lists">
     <div class="label lrow">Projects<button class="iconbtn" id="newProjBtn" title="New project">+</button></div>
     <div id="newProjRow" class="newproj"><input id="newProjName" class="field" placeholder="Project name, then Enter" maxlength="80"></div>
     <div id="projects"></div>
     <div class="label">Chats</div>
     <div id="chats"></div>
+    </div>
   </div>
   <div class="upd" id="upd"></div>
   <button class="quit" id="quitBtn" title="Close AI Amalgam">
@@ -320,6 +366,8 @@
     <div class="tabs" id="viewTabs"><button class="on" data-view="chat">Chat</button><button data-view="code">Code</button></div>
     <select id="moveSel" class="movesel" title="Move this chat to a project" style="display:none"></select>
     <div class="faces" id="faces"></div>
+    <div class="menuwrap"><button class="iconbtn" id="menuBtn" title="More" style="width:30px;height:30px;font-size:18px">⋯</button>
+      <div class="menu" id="menu"><button id="exportMd">Export chat as Markdown file</button><button id="copyChat">Copy whole chat</button></div></div>
   </header>
   <div id="log"></div>
   <div id="codeView">
@@ -335,6 +383,7 @@
     <div class="cpane" id="ct-term"><div class="term" id="termList"></div></div>
   </div>
   <div class="composer">
+    <div class="resumebar" id="resumeBar"><button class="btn go" id="resumeBtn">▶ Continue</button></div>
     <div class="approvebar" id="approveBar"><div class="t"><b id="apWho"></b> wants to run this in your code folder:</div><pre id="apCmds"></pre>
       <div class="row"><button class="btn go" id="apOk">Approve and run</button><button class="btn no" id="apNo">Deny</button>
         <small>Or type a reply to skip them.</small></div></div>
@@ -356,11 +405,11 @@
 
 <div class="right">
   <div id="banners"></div>
-  <div class="card">
+  <div class="card" data-card="chat">
     <h3>In this chat</h3>
     <div id="models"></div>
   </div>
-  <div class="card" id="projCard" style="display:none">
+  <div class="card" id="projCard" data-card="project" style="display:none">
     <div class="cardhead"><h3>Project</h3><button class="mini" id="delProj">Delete</button></div>
     <input id="projName" class="field" placeholder="Project name" maxlength="80">
     <textarea id="projInstr" class="field area" placeholder="Instructions both models always follow in this project (setting, tone, rules, what matters)…"></textarea>
@@ -376,20 +425,20 @@
     <p class="err2" id="codeErr" style="display:none"></p>
     <p class="help">Saved automatically. Every chat in this project gets these.</p>
   </div>
-  <div class="card" id="editsCard" style="display:none">
+  <div class="card" id="editsCard" data-card="edits" style="display:none">
     <h3>Doc edits</h3>
     <div id="edits"></div>
     <p class="help">To undo an edit: open the doc, then File → Version history.</p>
   </div>
-  <div class="card">
+  <div class="card" data-card="usage">
     <h3>Plan usage</h3>
     <div id="usage"><p class="help" style="margin:0">Checking…</p></div>
   </div>
-  <div class="card">
+  <div class="card" data-card="connections">
     <div class="cardhead"><h3>Connections</h3><button class="mini" id="refreshConn">Refresh</button></div>
     <div id="conns"><p class="help" style="margin:0">Checking…</p></div>
   </div>
-  <div class="card">
+  <div class="card" data-card="doc">
     <h3>Project doc</h3>
     <input id="docLink" class="field" placeholder="Paste a Google Doc or Drive link…" spellcheck="false">
     <div class="mrow" style="padding-top:10px">
@@ -398,19 +447,29 @@
     </div>
     <p class="help">Both Claude and GPT can read your Drive. Only Claude edits: with edits on, it shows you the exact change and waits for your OK.</p>
   </div>
-  <div class="card">
+  <div class="card" data-card="skills">
+    <h3>Skills</h3>
+    <p class="help" style="margin:0 0 6px">Playbooks the models follow. Switch off <span id="skillsWhere">everywhere</span>:</p>
+    <div id="skillList"></div>
+  </div>
+  <div class="card" data-card="discussion">
     <h3>Discussion</h3>
     <div class="stepper">
       <span>Max rounds</span>
       <div class="ctl"><button id="minus">−</button><output id="rounds">4</output><button id="plus">+</button></div>
     </div>
     <p class="help">One round = each model speaks once. They also stop when someone asks you a question, or when everyone agrees it's done.</p>
+    <div class="toggle-row"><span>Teammate checks questions first<br><small class="help" style="margin:0">Off: faster, one less reply per question</small></span>
+      <label class="switch"><input type="checkbox" id="checkQ" checked><span></span></label></div>
+    <div class="toggle-row"><span>Notify me when they need me<br><small class="help" style="margin:0">Pop-up and sound when you're in another window</small></span>
+      <label class="switch"><input type="checkbox" id="notifyOn" checked><span></span></label></div>
   </div>
-  <div class="card tips">
+  <div class="card tips" data-card="tips">
     <h3>Tips</h3>
     <p>Type while they're talking. They'll see your message on the next turn.</p>
     <p>Use <code>@claude</code> or <code>@gpt</code> for a single quick reply.</p>
-    <p>Reply "continue" to extend a discussion that hit its round limit.</p>
+    <p>Hover a message to copy it, edit your last message, or regenerate replies.</p>
+    <p><b>Ctrl+K</b> search · <b>Ctrl+N</b> new chat · <b>Esc</b> stop · <b>Ctrl+Enter</b> approve a command.</p>
   </div>
 </div>
 
@@ -434,9 +493,78 @@ async function api(path, data) {
   return (await fetch(path, opts)).json();
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+// Small Markdown renderer: headings, lists, quotes, tables, code blocks (with copy), links, bold/italic.
+function inlineMd(t) {
+  let s = esc(t);
+  const codes = [];
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => `<a href="${url}" data-ext="1">${label}</a>`);
+  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?'"])/g, (_, pre, url) => `${pre}<a href="${url}" data-ext="1">${url}</a>`);
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/__([^_\n]+)__/g, "<b>$1</b>");
+  s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, "$1<i>$2</i>").replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, "$1<i>$2</i>");
+  s = s.replace(/~~([^~\n]+)~~/g, "<s>$1</s>");
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[+i]}</code>`);
+}
 function render(text) {
-  return text.split(/```[^\n]*\n?/).map((p, i) => i % 2 ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>`
-    : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>")).join("");
+  const lines = String(text).replace(/\r/g, "").split("\n");
+  let html = "", i = 0, para = [];
+  const flush = () => { if (para.length) { html += `<p>${para.map(inlineMd).join("<br>")}</p>`; para = []; } };
+  while (i < lines.length) {
+    const line = lines[i];
+    const fence = line.match(/^\s*```\s*([\w+#.-]*)\s*$/);
+    if (fence) {
+      flush();
+      const buf = []; i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      html += `<div class="codeblock"><div class="cbar"><span>${esc(fence[1] || "code")}</span><button class="copy" data-copy="code">Copy</button></div><pre><code>${esc(buf.join("\n"))}</code></pre></div>`;
+      continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (h) { flush(); const n = Math.min(h[1].length + 2, 6); html += `<h${n}>${inlineMd(h[2])}</h${n}>`; i++; continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); html += "<hr>"; i++; continue; }
+    if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      flush();
+      const cells = l => l.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const head = cells(line); i += 2;
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
+      html += `<div class="tablewrap"><table><thead><tr>${head.map(c => `<th>${inlineMd(c)}</th>`).join("")}</tr></thead><tbody>${
+        rows.map(r => `<tr>${r.map(c => `<td>${inlineMd(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      continue;
+    }
+    if (/^\s*>\s?/.test(line)) {
+      flush();
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      html += `<blockquote>${render(buf.join("\n"))}</blockquote>`;
+      continue;
+    }
+    const li = line.match(/^(\s*)([-*+•]|\d{1,3}[.)])\s+(.*)$/);
+    if (li) {
+      flush();
+      const ordered = /\d/.test(li[2]);
+      const start = ordered ? parseInt(li[2]) : 1;
+      const items = [];
+      while (i < lines.length) {
+        const m = lines[i].match(/^(\s*)([-*+•]|\d{1,3}[.)])\s+(.*)$/);
+        if (m && /\d/.test(m[2]) === ordered && m[1].length < 2) { items.push([m[3]]); i++; continue; }
+        if (m && m[1].length >= 2 && items.length) { items[items.length - 1].push(lines[i].trim()); i++; continue; }
+        if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && items.length) { items[items.length - 1].push(lines[i].trim()); i++; continue; }
+        break;
+      }
+      const tag = ordered ? "ol" : "ul";
+      html += `<${tag}${ordered && start !== 1 ? ` start="${start}"` : ""}>${items.map(it => {
+        const [first, ...rest] = it;
+        return `<li>${inlineMd(first)}${rest.length ? render(rest.join("\n")) : ""}</li>`;
+      }).join("")}</${tag}>`;
+      continue;
+    }
+    if (!line.trim()) { flush(); i++; continue; }
+    para.push(line); i++;
+  }
+  flush();
+  return html;
 }
 const av = (who, cls = "") => `<div class="av ${esc(who)} ${cls}">${initials[who] || esc(who[0] || "?")}</div>`;
 const clock = t => new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
@@ -474,8 +602,14 @@ function addMessage(m, animate) {
       termItems.push(m);
     }
 
+    const tools = (m.kind === "user" || m.kind === "model" || m.kind === "question") ? `<span class="tools">
+      <button class="copy" data-copy="msg" title="Copy this message">Copy</button>
+      ${m.kind === "user" ? `<button data-act="edit" title="Edit and resend your last message">Edit</button>` : ""}
+      ${m.kind === "model" ? `<button data-act="regen" title="Let the models answer your last message again">Regenerate</button>` : ""}</span>` : "";
     div.innerHTML = `${av(m.speaker, m.speaker === "You ran" ? "ran" : "")}<div><div class="meta"><span class="name ${esc(m.speaker)}">${esc(m.speaker)}</span>
-      <span class="time">${clock(m.created)}</span></div>${inner}</div>`;
+      <span class="time">${clock(m.created)}</span>${tools}</div>${inner}</div>`;
+    div.dataset.mid = m.id; msgsById[m.id] = m;
+    if (m.kind === "model") div.dataset.model = "1";
   }
   if (m.kind === "user") div.dataset.user = "1";
   if (animate && !(m.kind === "model" && streamedBy === m.speaker)) div.classList.add("enter");
@@ -779,22 +913,30 @@ function renderUpdate(u) {
   else {
     if (u.available) html += `<button class="new" id="updNow"><b>Update available: v${esc(u.latest)}</b><br>Click to install. Your chats and settings are kept.</button>`;
     if (u.error) html += `<span class="err">${esc(u.error)}</span>`;
+    if (u.rollback && !u.available) html += `<button id="updBack" title="Undo the last update">Go back to v${esc(u.rollback)}</button><br>`;
     html += `v${esc(u.current)} · <button id="updCheck">${u.state === "checking" ? "Checking…" : u.checked_at && !u.available && !u.error ? "Up to date ✓" : "Check for updates"}</button>`;
   }
   $("upd").innerHTML = html;
   if ($("updCheck")) $("updCheck").onclick = () => api("/api/update/check", {});
   if ($("updNow")) $("updNow").onclick = () => { restartingNow = true; api("/api/update/install", {}); };
+  if ($("updBack")) $("updBack").onclick = () => {
+    if (confirm(`Go back to version ${u.rollback}? The app restarts; your chats and settings are kept.`)) { restartingNow = true; api("/api/update/rollback", {}); }
+  };
 }
 let restartingNow = false;
 
-let modelsSig = "", connSig = "", usageSig = "";
+let modelsSig = "", connSig = "", usageSig = "", lastFull = 0, fullState = {}, currentProject = null;
 async function poll() {
   try {
-    const s = await api("/api/state?after=" + lastId);
+    const lite = Date.now() - lastFull < 2500 && lastStatus === "running";
+    const got = await api(`/api/state?after=${lastId}&focused=${document.hasFocus() ? 1 : 0}${lite ? "&lite=1" : ""}`);
+    if (!lite) { lastFull = Date.now(); fullState = got; }
+    const s = lite ? {...fullState, ...got} : got;
     projectsById = Object.fromEntries((s.projects || []).map(p => [p.id, p]));
     const viewKey = s.chat_id + "|" + s.project_id;
     if (viewKey !== chatId) {
-      chatId = viewKey; lastId = 0; commandsById = {}; termItems = []; termSig = "";
+      chatId = viewKey; lastId = 0; commandsById = {}; termItems = []; termSig = ""; msgsById = {};
+      if (editing) stopEditing();
       const full = await api("/api/state?after=0");
       $("log").innerHTML = "";
       if (!full.messages.length) showEmpty(s.project_id); else typingEl();
@@ -826,6 +968,17 @@ async function poll() {
     renderEdits(s.doc_edits);
     $("stopBtn").classList.toggle("show", s.status === "running");
     renderCode(s);
+    renderHint(s);
+    notifyCheck(s);
+    markLatest();
+    currentProject = s.project_id;
+    if (!lite) {
+      renderSkills(s.skills, s.skills_off || [], !!s.project_id);
+      notifyOn = s.notify !== false;
+      if (document.activeElement !== $("notifyOn")) $("notifyOn").checked = notifyOn;
+      if (document.activeElement !== $("checkQ")) $("checkQ").checked = s.check_questions !== false;
+      if (!collapsedLoaded && s.ui_collapsed) { collapsed = new Set(s.ui_collapsed); collapsedLoaded = true; applyCollapsed(); }
+    }
     $("input").placeholder = s.code && s.code.pending_command && s.status === "waiting" ? "Approve or deny above, or type a reply to skip the commands…"
       : s.status === "waiting" ? "Answer the question to continue…"
       : s.status === "running" ? "Add something to the discussion…" : "Message Claude and GPT…";
@@ -851,6 +1004,161 @@ function showClosed() {
   }
   $("closed").classList.add("show"); try { window.close(); } catch (e) {}
 }
+
+// ---------- message tools: copy, edit, regenerate, links ----------
+let msgsById = {};
+function markLatest() {
+  const all = [...$("log").querySelectorAll(".msg[data-mid]")];
+  let lastUser = -1;
+  all.forEach((d, i) => { d.classList.remove("lastuser", "canregen"); if (d.dataset.user) lastUser = i; });
+  if (lastUser >= 0) all[lastUser].classList.add("lastuser");
+  all.forEach((d, i) => { if (i > lastUser && d.dataset.model) d.classList.add("canregen"); });
+}
+async function copyText(t, btn) {
+  try { await navigator.clipboard.writeText(t); } catch (e) {
+    const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+  }
+  if (btn) { const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => btn.textContent = old, 1200); }
+}
+$("log").addEventListener("click", async e => {
+  const a = e.target.closest("a[data-ext]");
+  if (a) { e.preventDefault(); api("/api/open-link", {url: a.getAttribute("href")}); return; }
+  const c = e.target.closest(".copy[data-copy]");
+  if (c) {
+    if (c.dataset.copy === "code") copyText(c.closest(".codeblock").querySelector("pre").innerText, c);
+    else { const m = msgsById[c.closest(".msg").dataset.mid]; if (m) copyText(m.text, c); }
+    return;
+  }
+  const act = e.target.closest("[data-act]");
+  if (!act) return;
+  if (lastStatus === "running") return alert("Wait for the models to finish, or press Stop first.");
+  if (act.dataset.act === "edit") {
+    const m = msgsById[act.closest(".msg").dataset.mid];
+    editing = true; $("input").value = m.text.replace(/\n\n(📎 .*\n?)+$/, ""); grow(); $("input").focus();
+    $("hint").innerHTML = `Editing your last message. Everything after it will be replaced. <b>Enter</b> to resend · <a href="#" id="cancelEdit">cancel</a>`;
+    $("cancelEdit").onclick = ev => { ev.preventDefault(); stopEditing(); };
+  } else if (act.dataset.act === "regen") {
+    if (!confirm("Remove the replies after your last message and let the models answer it again?")) return;
+    const r = await api("/api/regenerate", {});
+    if (r.error) alert(r.error);
+    chatId = undefined;   // reload the chat
+  }
+});
+let editing = false;
+const defaultHint = $("hint").innerHTML;
+function stopEditing() { editing = false; $("hint").innerHTML = defaultHint; $("input").value = ""; grow(); }
+
+// ---------- continue / retry ----------
+function renderHint(s) {
+  const h = s.hint, bar = $("resumeBar");
+  const show = s.chat_id && s.status !== "running" && (h === "limit" || h === "error" || h === "stopped");
+  bar.classList.toggle("show", !!show);
+  if (show) $("resumeBtn").textContent = h === "error" ? "↻ Retry" : "▶ Continue";
+}
+$("resumeBtn").onclick = () => { $("resumeBar").classList.remove("show"); api("/api/resume", {}); };
+
+// ---------- notifications (in the window: title + chime; the app adds a Windows pop-up) ----------
+let notifyOn = true, prevStatus = "idle", unseen = 0;
+function chime() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    [660, 880].forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ac.destination);
+      const t = ac.currentTime + i * 0.16;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+      o.start(t); o.stop(t + 0.3);
+    });
+  } catch (e) {}
+}
+function notifyCheck(s) {
+  if (prevStatus === "running" && s.status !== "running" && notifyOn && !document.hasFocus()) { unseen++; chime(); }
+  prevStatus = s.status;
+  document.title = unseen ? `(${unseen}) ● AI Amalgam` : "AI Amalgam";
+}
+window.addEventListener("focus", () => { unseen = 0; document.title = "AI Amalgam"; });
+
+// ---------- search ----------
+let searchTimer = null;
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = $("search").value.trim();
+  if (!q) { $("results").style.display = "none"; $("lists").style.display = ""; return; }
+  searchTimer = setTimeout(async () => {
+    const r = await api("/api/search?q=" + encodeURIComponent(q));
+    $("lists").style.display = "none"; $("results").style.display = "";
+    $("results").innerHTML = r.results.length ? r.results.map(x => `<button data-res="${x.id}"><b>${esc(x.title)}</b>${
+      x.project_id && projectsById[x.project_id] ? `<span class="rp">📁 ${esc(projectsById[x.project_id].name)}</span>` : ""}${
+      x.snippet ? `<small>${esc(x.snippet)}</small>` : ""}</button>`).join("") : `<div class="none">No chats match "${esc(q)}".</div>`;
+    $("results").querySelectorAll("[data-res]").forEach(b => b.onclick = () => api("/api/open", {chat_id: +b.dataset.res}));
+  }, 180);
+});
+$("search").addEventListener("keydown", e => { if (e.key === "Escape") { $("search").value = ""; $("search").dispatchEvent(new Event("input")); $("input").focus(); } });
+
+// ---------- export ----------
+async function chatMarkdown() {
+  const full = await api("/api/state?after=0&lite=1");
+  const title = (document.querySelector("#title").textContent || "Chat").replace(/^.*› /, "");
+  const lines = [`# ${title}`, ""];
+  for (const m of full.messages) {
+    const when = new Date(m.created * 1000).toLocaleString();
+    if (m.kind === "system") lines.push(`> _${m.text.replace(/\n/g, " ")}_`, "");
+    else if (m.kind === "question") lines.push(`**${m.speaker} asked you** (${when}):`, "", m.text.replace(/^CHOICE:\s*/gm, "- "), "");
+    else if (m.kind === "command") lines.push(`**${m.speaker} asked to run:**`, "", "```", m.text, "```", "");
+    else if (m.kind === "output") lines.push("```", m.text, "```", "");
+    else lines.push(`**${m.speaker}** (${when}):`, "", m.text, "");
+  }
+  return {title, md: lines.join("\n")};
+}
+$("menuBtn").onclick = e => { e.stopPropagation(); $("menu").classList.toggle("show"); };
+document.addEventListener("click", () => $("menu").classList.remove("show"));
+$("exportMd").onclick = async () => {
+  const {title, md} = await chatMarkdown();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([md], {type: "text/markdown"}));
+  a.download = title.replace(/[<>:"/\\|?*]+/g, " ").trim().slice(0, 60) + ".md";
+  document.body.appendChild(a); a.click(); a.remove();
+};
+$("copyChat").onclick = async () => copyText((await chatMarkdown()).md);
+
+// ---------- collapsible cards ----------
+let collapsed = new Set(["connections", "discussion", "tips", "skills"]), collapsedLoaded = false;
+function applyCollapsed() {
+  document.querySelectorAll(".card[data-card]").forEach(c => c.classList.toggle("collapsed", collapsed.has(c.dataset.card)));
+}
+document.querySelectorAll(".card[data-card] h3").forEach(h => h.onclick = e => {
+  const c = h.closest(".card"), id = c.dataset.card;
+  collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+  applyCollapsed();
+  api("/api/ui", {collapsed: [...collapsed]});
+});
+applyCollapsed();
+
+// ---------- skills ----------
+let skillsSig = "";
+function renderSkills(skills, off, inProject) {
+  const sig = JSON.stringify([skills, off, inProject]);
+  if (sig === skillsSig || !skills) return;
+  skillsSig = sig;
+  $("skillsWhere").textContent = inProject ? "for this project" : "everywhere";
+  $("skillList").innerHTML = skills.length ? skills.map(k => `<div class="mrow skill"><div class="who"><b>${esc(k.name)}</b>
+    <small class="plain" title="${esc(k.description)}">${esc(k.description)}</small></div>
+    <label class="switch"><input type="checkbox" data-skill="${esc(k.name)}" ${off.includes(k.name) ? "" : "checked"}><span></span></label></div>`).join("")
+    : `<p class="help" style="margin:0">No skills installed.</p>`;
+  $("skillList").querySelectorAll("[data-skill]").forEach(cb => cb.onchange = () => api("/api/skills/toggle", {name: cb.dataset.skill, on: cb.checked}));
+}
+$("notifyOn").onchange = () => api("/api/settings", {notify: $("notifyOn").checked});
+$("checkQ").onchange = () => api("/api/settings", {check_questions: $("checkQ").checked});
+
+// ---------- keyboard shortcuts ----------
+document.addEventListener("keydown", e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); $("search").focus(); $("search").select(); }
+  else if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); api("/api/new", {project_id: currentProject || null}); }
+  else if (mod && e.key === "Enter" && $("approveBar").classList.contains("show")) { e.preventDefault(); approve(true); }
+  else if (e.key === "Escape" && lastStatus === "running" && !$("input").value) { api("/api/stop", {}); }
+  else if (e.key === "Escape" && editing) stopEditing();
+});
 
 // ---------- coding area ----------
 let view = "chat", ctab = "files", codeDir = null, files = [], openFile = null, wasRunning = false, termSig = "", chgOpen = new Set();
@@ -1035,6 +1343,13 @@ async function send() {
   if (!text && lastPending.length) text = "I've attached some files.";
   if (!text) return;
   $("input").value = ""; grow();
+  if (editing) {
+    stopEditing();
+    const r = await api("/api/edit-last", {text});
+    if (r.error) alert(r.error);
+    chatId = undefined;   // reload the chat
+    return;
+  }
   await api("/api/send", {text});
 }
 $("input").addEventListener("input", grow);

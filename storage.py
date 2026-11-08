@@ -309,6 +309,37 @@ class Store:
                 self._db.execute("UPDATE chats SET title = ? WHERE id = ?", (title, chat_id))
                 self._db.commit()
 
+    def chat_title(self, chat_id):
+        with self._lock:
+            row = self._db.execute("SELECT title FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        return row[0] if row else None
+
+    def delete_messages(self, chat_id, after_id, from_id=None):
+        """Delete a chat's messages with id > after_id (used by Regenerate and Edit)."""
+        with self._lock:
+            self._db.execute("DELETE FROM messages WHERE chat_id = ? AND id > ?", (chat_id, after_id))
+            self._db.execute("UPDATE chats SET summary = '', summary_upto = 0 WHERE id = ? AND summary_upto > ?",
+                             (chat_id, after_id))
+            self._db.commit()
+
+    def search(self, query, limit=40):
+        """Chats whose title or messages contain the words (case-insensitive), newest first."""
+        q = f"%{query.strip()}%"
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT c.id, c.title, c.project_id, c.updated, "
+                "(SELECT m.text FROM messages m WHERE m.chat_id = c.id AND m.text LIKE ? ORDER BY m.id DESC LIMIT 1) "
+                "FROM chats c WHERE c.title LIKE ? OR EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id AND m.text LIKE ?) "
+                "ORDER BY c.updated DESC LIMIT ?", (q, q, q, limit)).fetchall()
+        out = []
+        for cid, title, pid, updated, text in rows:
+            snippet = ""
+            if text:
+                i = text.lower().find(query.strip().lower())
+                snippet = ("…" if i > 40 else "") + text[max(0, i - 40): i + 100].replace("\n", " ") + "…"
+            out.append({"id": cid, "title": title, "project_id": pid, "updated": updated, "snippet": snippet})
+        return out
+
     def delete_chat(self, chat_id):
         with self._lock:
             self._db.execute("DELETE FROM attachments WHERE chat_id = ?", (chat_id,))

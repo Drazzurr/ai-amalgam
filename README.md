@@ -79,6 +79,24 @@ Your normal browser isn't involved.
 - The **Project** card (right panel) holds instructions both models follow in every chat of that project,
   and a default doc link for new chats. Deleting a project keeps its chats (they move to **Chats**).
 
+## Handy extras
+
+- **Formatting:** lists, headings, tables, links and code blocks show properly. Code blocks have a
+  **Copy** button; hover any message for **Copy**, **Edit** (your last message) and **Regenerate**.
+- **Continue / Retry:** when a discussion stops (round limit, Stop, or an error), a button
+  picks it back up.
+- **Notifications:** when the models need you or finish while you're in another window, you get a
+  Windows pop-up and a chime (switch off under Discussion).
+- **Search** all chats with **Ctrl+K**. **Ctrl+N** new chat, **Esc** stop, **Ctrl+Enter** approve
+  a command.
+- **Export** a chat as a Markdown file, or copy it all, from the **⋯** menu at the top right.
+- **Tidy panel:** click a card's title to fold it; the app remembers.
+- **Skills** card: see the installed skills and switch any off, everywhere or per project.
+- **Per-project speeds:** Fast/Balanced/Best chosen inside a project apply to that project only.
+- **Pictures for GPT:** images you attach now go to GPT too, not just Claude.
+- **Go back a version:** after an update, the sidebar footer offers **Go back to vX** if something
+  broke.
+
 ## Coding area
 
 Give a project a **code folder** in the Project card: **Create a folder for me** makes a new one

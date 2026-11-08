@@ -692,7 +692,7 @@ class CodexRunner(Runner):
                 "--sandbox", "read-only",
                 # (no --ephemeral: Codex's session log holds the plan usage shown in the Usage card)
                 "--output-last-message", out_file,
-            ] + self._speed() + ["-"]
+            ] + [f"--image={p}" for p in getattr(self, "images", []) if os.path.isfile(p)] + self._speed() + ["-"]
             try:
                 out, _ = self._run(args, prompt, on_line)
             except RunnerError as e:
@@ -765,8 +765,8 @@ class DemoRunner(Runner):
         self.turns += 1
         lines = [
             f"({self.name}, demo turn {self.turns}, {self.speed} speed) I've read the conversation so far.",
-            "Here is my take: break the goal into small steps and test each one, "
-            "then check the result against the doc before moving on.",
+            "Here is my take:\n- break the goal into **small steps**\n- test each one\n  - then check the doc\n\n"
+            "| Step | Owner |\n|---|---|\n| Plan | Claude |\n| Review | GPT |\n\n```python\nprint('hi')\n```",
         ]
         if self.code_dir and self.key == "claude" and "[Command result" not in prompt and self.turns == 1:
             with open(os.path.join(self.code_dir, "hello.py"), "w", encoding="utf-8") as f:
@@ -790,6 +790,8 @@ class DemoRunner(Runner):
             lines.append("DONE")
         else:
             lines.append("NEXT")
+        if "TITLE: <" in prompt:
+            lines.insert(-1, "TITLE: Demo planning session")
         full = "\n".join(lines)
         if allow_edits and self.key == "claude" and self.turns == 1:
             self.last_edits = [describe_edit("mcp__claude_ai_Google_Docs__update_doc",

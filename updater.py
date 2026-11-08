@@ -70,6 +70,7 @@ def install():
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     backup = os.path.join(base, "AIAmalgam", "backups", f"{current_version()}-{time.strftime('%Y%m%d-%H%M%S')}")
     os.makedirs(backup, exist_ok=True)
+    added = []
 
     for name in names:
         rel = name[len(top):]
@@ -82,10 +83,65 @@ def install():
             b = os.path.join(backup, *rel.split("/"))
             os.makedirs(os.path.dirname(b), exist_ok=True)
             shutil.copy2(dest, b)
+        else:
+            added.append(rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with zf.open(name) as src, open(dest, "wb") as out:
             shutil.copyfileobj(src, out)
+    with open(os.path.join(backup, ".added-files"), "w", encoding="utf-8") as f:
+        f.write("\n".join(added))
     return current_version()
+
+
+def _backups_root():
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "AIAmalgam", "backups")
+
+
+def last_backup():
+    """(folder, version) of the most recent update backup that can be restored, or (None, None)."""
+    root = _backups_root()
+    try:
+        dirs = [os.path.join(root, d) for d in os.listdir(root)
+                if os.path.isdir(os.path.join(root, d)) and not d.endswith("-restored")]
+    except OSError:
+        return None, None
+    dirs = [d for d in dirs if os.path.isfile(os.path.join(d, "app.py"))]
+    if not dirs:
+        return None, None
+    newest = max(dirs, key=os.path.getmtime)
+    return newest, os.path.basename(newest).split("-")[0]
+
+
+def rollback():
+    """Put back the program files from before the last update. Your chats and settings are untouched."""
+    folder, version = last_backup()
+    if not folder:
+        raise RuntimeError("There's no earlier version saved to go back to.")
+    try:
+        with open(os.path.join(folder, ".added-files"), encoding="utf-8") as f:
+            added = [l for l in f.read().splitlines() if l.strip()]
+    except OSError:
+        added = []
+    for dirpath, _dirs, files in os.walk(folder):
+        for name in files:
+            if name == ".added-files":
+                continue
+            src = os.path.join(dirpath, name)
+            rel = os.path.relpath(src, folder)
+            dest = os.path.join(APP_DIR, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(src, dest)
+    for rel in added:   # files that the update added and the old version didn't have
+        if rel.split("/")[0] in KEEP:
+            continue
+        path = os.path.join(APP_DIR, *rel.split("/"))
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    os.rename(folder, folder + "-restored")
+    return version
 
 
 def restart_later(args, delay=3):

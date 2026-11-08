@@ -119,6 +119,9 @@ CODE_ROLE_REVIEWER = ("You are the reviewer: you can read files and run read-onl
 CODE_ROLE_NO_EDITOR = ("Nobody can edit files right now (the editor, Claude, is unavailable). Read and review, and "
                        "describe exact changes (file and code) for the user to apply or for later.")
 
+TITLE_RE = re.compile(r"^\W*TITLE\s*:\s*(.+?)\s*$", re.IGNORECASE)
+TITLE_LINE = ("\nThis is the first reply in a new chat: add one line \"TITLE: <a 3 to 6 word title for this chat>\" "
+              "just above your last line.\n")
 RUN_RE = re.compile(r"^\W*RUN\s*:\s*(.+?)\s*$", re.IGNORECASE)
 MAX_RUNS = 3
 
@@ -212,6 +215,7 @@ class Orchestrator:
         self.cp = checkpoints          # codework.Checkpoints, for diffs and undo in code folders
         self.pending_commands = None   # {"msg_id", "speaker", "commands"} waiting for your approval
         self.question_open = False     # a question is waiting for your answer
+        self.hint = None               # why the discussion stopped: limit | error | stopped | done
         self._cmd_proc = None
         self.runners = {r.key: r for r in runners}
         self.order = [r.key for r in runners]
@@ -239,6 +243,7 @@ class Orchestrator:
         self.last_question = None   # (speaker, question, choices) waiting for a teammate's check
         self.last_hold = ""   # model key -> time it can rejoin (after hitting its plan limit)
         self._thread = None
+        self.check_questions = store.get_setting("check_questions", "1") == "1"
 
     # ----- public actions (called from the web UI) -----
 
@@ -247,6 +252,10 @@ class Orchestrator:
         with self._lock:
             self.chat_id = None
             self.project_id = project_id
+            self.hint = None
+            self.pending_commands = None
+            self.question_open = False
+            self._apply_speeds()
             project = self.store.project(project_id)
             # new chats in a project start with the project's last "Allow doc edits" choice
             self.pending_chat_settings = {"doc_link": project["doc_link"] if project else "",
@@ -260,9 +269,40 @@ class Orchestrator:
             self.chat_id = chat_id
             self.project_id = self.store.chat_project(chat_id)
             self.status = "idle"
+            self.hint = None
+            self.pending_commands = None
+            self.question_open = False
+            self._apply_speeds()
+            # pick up where the chat left off: an unanswered question or command request
+            for m in reversed(self.store.messages(chat_id)):
+                if m["kind"] == "system":
+                    continue
+                if m["kind"] == "command":
+                    self.pending_commands = {"msg_id": m["id"], "speaker": m["speaker"],
+                                             "commands": m["text"].splitlines()}
+                    self.status = "waiting"
+                elif m["kind"] == "question":
+                    self.question_open = True
+                    self.status = "waiting"
+                    continue   # a command request may sit just before it
+                break
 
-    def settings(self, max_rounds=None, enabled=None, speeds=None):
+    def _apply_speeds(self):
+        """Use the open project's speed for each model if it has one, else your general choice."""
+        for key, r in self.runners.items():
+            sp = None
+            if self.project_id:
+                sp = self.store.get_setting(f"speed_{key}_project_{self.project_id}")
+            sp = sp or self.store.get_setting(f"speed_{key}", "balanced")
+            r.speed = sp if sp in ("fast", "balanced", "best") else "balanced"
+
+    def settings(self, max_rounds=None, enabled=None, speeds=None, check_questions=None, notify=None):
         with self._lock:
+            if check_questions is not None:
+                self.check_questions = bool(check_questions)
+                self.store.set_setting("check_questions", "1" if check_questions else "0")
+            if notify is not None:
+                self.store.set_setting("notify", "1" if notify else "0")
             if max_rounds is not None:
                 self.max_rounds = max(1, min(20, int(max_rounds)))
                 self.store.set_setting("max_rounds", self.max_rounds)
@@ -270,7 +310,9 @@ class Orchestrator:
                 for key, sp in speeds.items():
                     if key in self.runners and sp in ("fast", "balanced", "best"):
                         self.runners[key].speed = sp
-                        self.store.set_setting(f"speed_{key}", sp)
+                        # in a project, the speed is remembered for that project only
+                        name = f"speed_{key}_project_{self.project_id}" if self.project_id else f"speed_{key}"
+                        self.store.set_setting(name, sp)
             if enabled:
                 for key, on in enabled.items():
                     if key in self.enabled:
@@ -314,6 +356,7 @@ class Orchestrator:
                                "You replied instead of approving, so those commands were skipped.")
                 self.pending_commands = None
             self.question_open = False
+            self.hint = None
             self.store.add(self.chat_id, "You", "user", text)
             if self.status == "running":
                 # The models will see it on their next turn.
@@ -322,6 +365,50 @@ class Orchestrator:
             self._stop.clear()
             self._thread = threading.Thread(target=self._loop, args=(text,), daemon=True)
             self._thread.start()
+
+    def resume(self):
+        """Continue (or retry) the discussion without a new message from you."""
+        with self._lock:
+            if self.chat_id is None or self.status == "running":
+                return False
+            self.hint = None
+            self.status = "running"
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._loop, args=("",), daemon=True)
+            self._thread.start()
+        return True
+
+    def _last_user_id(self):
+        for m in reversed(self.store.messages(self.chat_id)):
+            if m["kind"] == "user":
+                return m["id"]
+        return None
+
+    def regenerate(self):
+        """Throw away everything after your last message and let the models answer it again."""
+        if self.chat_id is None or self.status == "running":
+            return "Wait for the models to finish, or press Stop first."
+        last = self._last_user_id()
+        if last is None:
+            return "There's nothing to regenerate yet."
+        self.store.delete_messages(self.chat_id, after_id=last)
+        self.pending_commands = None
+        self.question_open = False
+        self.resume()
+        return None
+
+    def edit_last(self, text):
+        """Replace your last message (and everything after it) with an edited version."""
+        if self.chat_id is None or self.status == "running":
+            return "Wait for the models to finish, or press Stop first."
+        last = self._last_user_id()
+        if last is None:
+            return "There's no message to edit."
+        self.store.delete_messages(self.chat_id, after_id=last - 1, from_id=last)
+        self.pending_commands = None
+        self.question_open = False
+        self.send(text)
+        return None
 
     def _file_into_chat(self, f):
         """Move an uploaded file from the inbox into this chat's attachments folder."""
@@ -354,6 +441,7 @@ class Orchestrator:
             "chat_id": self.chat_id,
             "project_id": self.project_id,
             "status": self.status,
+            "hint": self.hint if self.status != "running" else None,
             "speaker": self.speaker,
             "live": self.live if self.speaker else None,
             "resting": {self.runners[k].name: until for k, until in self.resting.items()},
@@ -426,7 +514,7 @@ class Orchestrator:
                 asked = False
                 for key in self._active():
                     if self._stop.is_set():
-                        self._note("Stopped. Send a message to continue.")
+                        self._note("Stopped. Send a message, or press Continue, to keep going."); self.hint = "stopped"
                         return
                     if key not in self._active():
                         continue
@@ -451,14 +539,15 @@ class Orchestrator:
                         continue
                     done_streak = done_streak + 1 if result == "DONE" else 0
                     if not asked and done_streak >= len(self._active()):
+                        self.hint = "done"
                         self._note("Discussion finished: every model agrees the goal is met. "
                                    "Send a message to keep going or start a new chat.")
                         return
                 if asked:
                     self._pause_for_user()
                     return
-            self._note(f"Round limit reached ({self.max_rounds} rounds). "
-                       "Send a message (even just \"continue\") to keep going.")
+            self.hint = "limit"
+            self._note(f"Round limit reached ({self.max_rounds} rounds). Press Continue, or send a message, to keep going.")
         finally:
             with self._lock:
                 if self.status == "running":
@@ -507,6 +596,9 @@ class Orchestrator:
         self.speaker = runner.name
         code_dir = self.code_dir()
         runner.code_dir = code_dir
+        runner.images = [os.path.join(runner.workdir, a["path"]) for a in
+                         (self.store.attachments(self.chat_id) if self.chat_id else [])
+                         if a["path"].lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))][-4:]
         before = self._checkpoint(code_dir, f"before {runner.name}'s turn")
         self.last_question = None
         prompt = self._build_prompt(key, extra)
@@ -528,7 +620,7 @@ class Orchestrator:
         except Exception as e:  # RunnerError or anything unexpected
             others = [k for k in self._active() if k != key]
             if self._stop.is_set():
-                self._note("Stopped. Send a message to continue.")
+                self._note("Stopped. Send a message, or press Continue, to keep going."); self.hint = "stopped"
             elif LIMIT_RE.search(str(e)) and others:
                 # Plan limit hit: carry on without this model and bring it back after the reset.
                 until = None
@@ -547,8 +639,9 @@ class Orchestrator:
                            f"automatically after {back}.")
                 return "rested"
             else:
+                self.hint = "error"
                 self._note(f"{runner.name} couldn't reply, so the discussion is paused.\n\n{e}\n\n"
-                           "If this mentions a usage limit, wait for it to reset, then send \"continue\".")
+                           "Press Retry to try again. If this mentions a usage limit, wait for it to reset first.")
             return "error"
         finally:
             self.speaker = None
@@ -557,7 +650,7 @@ class Orchestrator:
             if not reply_ok:   # failed or stopped turn: still log any files it changed
                 self._record_change(code_dir, before, runner.name)
         if self._stop.is_set():
-            self._note("Stopped. Send a message to continue.")
+            self._note("Stopped. Send a message, or press Continue, to keep going."); self.hint = "stopped"
             self._record_change(code_dir, before, runner.name)
             return "error"
         self._report_tool_problems(runner)
@@ -566,6 +659,16 @@ class Orchestrator:
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
         reply, choices = split_choices(reply)
         reply, runs = split_runs(reply) if code_dir else (reply, [])
+        kept, title = [], None
+        for line in reply.splitlines():
+            m = TITLE_RE.match(line)
+            if m:
+                title = title or m.group(1).strip().strip('"*_`').strip()
+            else:
+                kept.append(line)
+        reply = "\n".join(kept)
+        if title and self._needs_title():
+            self.store.rename_chat(self.chat_id, title[:60])
         body, signal, question = parse_signal(reply)
         keep, remembered = [], []
         for line in body.splitlines():
@@ -616,6 +719,31 @@ class Orchestrator:
         others = [t for t in denied if t not in edit_denied]
         if others:
             self._note(f"{runner.name} was blocked from using: {', '.join(sorted(set(others)))[:300]}.")
+
+    def skills_off(self):
+        key = f"skills_off_project_{self.project_id}" if self.project_id else "skills_off"
+        try:
+            import json
+            return list(json.loads(self.store.get_setting(key, "[]")))
+        except ValueError:
+            return []
+
+    def set_skill(self, name, on):
+        import json
+        off = set(self.skills_off())
+        (off.discard if on else off.add)(name)
+        key = f"skills_off_project_{self.project_id}" if self.project_id else "skills_off"
+        self.store.set_setting(key, json.dumps(sorted(off)))
+
+    def _needs_title(self):
+        """True while a chat still has its automatic title (your first line) and no model reply yet."""
+        if not self.chat_id:
+            return False
+        msgs = self.store.messages(self.chat_id)
+        if any(m["kind"] == "model" for m in msgs):
+            return False
+        first = next((m for m in msgs if m["kind"] == "user"), None)
+        return bool(first) and self.store.chat_title(self.chat_id) == (first["text"].splitlines()[0][:80] or "New chat")
 
     # ----- coding area -----
 
@@ -699,7 +827,7 @@ class Orchestrator:
                     self._run_one(cmd, code_dir, "Terminal")
             self.turn_seq += 1
             if self._stop.is_set():
-                self._note("Stopped. Send a message to continue.")
+                self._note("Stopped. Send a message, or press Continue, to keep going."); self.hint = "stopped"
                 return
             if self.question_open:      # a question is still waiting for you
                 self._pause_for_user()
@@ -775,7 +903,7 @@ class Orchestrator:
         holds it, the asker reconsiders once. Returns 'asked', 'continue' or 'error'."""
         q = self.last_question
         reviewers = [k for k in self._active() if k != asker]
-        if not reviewers:
+        if not reviewers or not self.check_questions:
             self._publish(q)
             return "asked"
         names = " and ".join(self.runners[k].name for k in reviewers)
@@ -908,6 +1036,11 @@ class Orchestrator:
                 lines.append(f"[Command result]:\n{out}")
             else:
                 lines.append(f"[{m['speaker']}]: {m['text']}")
+        if self._needs_title():
+            extra = TITLE_LINE + extra
+        off = self.skills_off()
+        if off:
+            doc += ("\nThe user switched these skills off here, so don't use them: " + ", ".join(off) + "\n")
         return PROMPT_TEMPLATE.format(name=name, others=others_text, tools=tools, doc=doc, extra=extra,
                                       transcript=self._fit(lines))
 
