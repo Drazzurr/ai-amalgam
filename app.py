@@ -612,6 +612,7 @@ class App:
                     if app.orch.chat_id == cid:
                         app.orch.new_chat(app.orch.project_id)
                     app.store.delete_chat(cid)
+                    shutil.rmtree(os.path.join(WORKSPACE, "attachments", f"chat-{cid}"), ignore_errors=True)
                 elif path == "/api/chat/move":
                     pid = data.get("project_id")
                     app.store.move_chat(int(data["chat_id"]), int(pid) if pid else None)
