@@ -56,6 +56,15 @@ CLAUDE_BLOCKED_TOOLS = [
     "mcp__claude_ai_Google_Drive__share_file",
 ]
 
+# Coding area: Claude may edit files, but only inside the project's code folder (Claude Code's
+# acceptEdits mode only auto-approves edits in the folder it runs in). Shell commands stay blocked:
+# the models ask with RUN: lines and the app runs them after you approve.
+CLAUDE_CODE_BLOCKED_TOOLS = [
+    "Bash", "PowerShell",
+    "mcp__claude_ai_Google_Drive__trash_file",
+    "mcp__claude_ai_Google_Drive__share_file",
+]
+
 TURN_TIMEOUT_SECONDS = 600  # give up on a single reply after 10 minutes
 
 # Windows: don't flash a console window for each call.
@@ -250,6 +259,10 @@ def tool_activity(name):
         return "using Google Drive"
     if "websearch" in n or "web_search" in n:
         return "searching the web"
+    if n in ("edit", "multiedit", "write", "notebookedit"):
+        return "editing code"
+    if n in ("read", "glob", "grep"):
+        return "reading code"
     if "webfetch" in n or "fetch" in n:
         return "reading a web page"
     return "using a tool"
@@ -303,6 +316,7 @@ class Runner:
         self.speed = "balanced"
         self._speed_ok = True   # set False if the tool rejects the speed option
         self._lock = threading.Lock()
+        self.code_dir = None   # set by the orchestrator for chats in a project with a code folder
 
     def available(self):
         return shutil.which(self.exe) is not None if self.exe else True
@@ -332,7 +346,7 @@ class Runner:
             self._stopped = False
             self._proc = subprocess.Popen(
                 [path] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                cwd=self.workdir, env=clean_env(), creationflags=NO_WINDOW)
+                cwd=self.code_dir or self.workdir, env=clean_env(), creationflags=NO_WINDOW)
             proc = self._proc
         err_chunks, out_lines = [], []
         reader = threading.Thread(target=lambda: err_chunks.append(proc.stderr.read()), daemon=True)
@@ -419,6 +433,7 @@ class ClaudeRunner(Runner):
 
     def _reply(self, prompt, allow_edits, on_event):
         allowed = CLAUDE_READ_ONLY_TOOLS + (CLAUDE_DOC_EDIT_TOOLS if allow_edits else [])
+        blocked = CLAUDE_CODE_BLOCKED_TOOLS if self.code_dir else CLAUDE_BLOCKED_TOOLS
         args = [
             "-p",
             # stream-json: live text as Claude writes, tool activity, and rate-limit status.
@@ -426,8 +441,8 @@ class ClaudeRunner(Runner):
             # Script mode can't show permission prompts, so the tools it may use are pre-approved.
             "--allowedTools", ",".join(allowed),
             # No shell commands or local file edits, and never delete or share Drive files.
-            "--disallowedTools", ",".join(CLAUDE_BLOCKED_TOOLS),
-        ] + self._speed()
+            "--disallowedTools", ",".join(blocked),
+        ] + (["--permission-mode", "acceptEdits"] if self.code_dir else []) + self._speed()
         live = {"text": ""}
         used = set()
 
@@ -713,7 +728,15 @@ class DemoRunner(Runner):
             "Here is my take: break the goal into small steps and test each one, "
             "then check the result against the doc before moving on.",
         ]
-        if "CHECK" in prompt and "QUESTION ===" in prompt:
+        if self.code_dir and self.key == "claude" and "[Command result" not in prompt and self.turns == 1:
+            with open(os.path.join(self.code_dir, "hello.py"), "w", encoding="utf-8") as f:
+                f.write('print("Hello from AI Amalgam")\n')
+            lines = [f"({self.name}, demo) I created hello.py. Let's run it to check.",
+                     "RUN: python3 hello.py" if sys.platform != "win32" else "RUN: python hello.py",
+                     "NEXT"]
+        elif self.code_dir and "[Command result" in prompt:
+            lines = [f"({self.name}, demo) The script ran fine. Looks good to me.", "DONE"]
+        elif "CHECK" in prompt and "QUESTION ===" in prompt:
             lines = [f"({self.name}, demo check) I think we can draft a bit more before asking.",
                      "HOLD: we can still draft one more section first"]
         elif "YOUR QUESTION WAS HELD" in prompt:

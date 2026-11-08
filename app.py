@@ -114,6 +114,22 @@ def install_skills():
                 print("Couldn't install skill", name, "to", dest_root, ":", e)
 
 
+def pick_folder():
+    """Show Windows' folder picker (runs on the app's side, so it can return a real path)."""
+    try:
+        import tkinter
+        from tkinter import filedialog
+        root = tkinter.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.askdirectory(title="Choose the code folder for this project", mustexist=True)
+        root.destroy()
+        return os.path.normpath(path) if path else ""
+    except Exception as e:
+        print("Folder picker failed:", e)
+        return None
+
+
 def open_window(url, force_browser=False):
     """Open the UI. Returns the window process (or None if we can't track it)."""
     if not force_browser:
@@ -170,7 +186,8 @@ class App:
         os.makedirs(WORKSPACE, exist_ok=True)
         os.makedirs(DATA_DIR, exist_ok=True)
         self.store = Store(DB_FILE)
-        self.orch = Orchestrator(self.store, make_runners(WORKSPACE, demo=args.demo))
+        from codework import Checkpoints
+        self.orch = Orchestrator(self.store, make_runners(WORKSPACE, demo=args.demo), Checkpoints(DATA_DIR))
         self.token = secrets.token_urlsafe(24)
         self.billing_vars = billing_vars_present()
         self.quit_event = threading.Event()
@@ -369,7 +386,33 @@ class App:
                     state["usage"] = app.usage
                     state["update"] = app.update
                     return self._json(state)
+                if url.path.startswith("/api/code/"):
+                    return self._code_get(url)
                 self._json({"error": "not found"}, 404)
+
+            def _code_get(self, url):
+                import codework
+                q = parse_qs(url.query)
+                code_dir = app.orch.code_dir()
+                if not code_dir:
+                    return self._json({"error": "This project has no code folder."}, 400)
+                if url.path == "/api/code/files":
+                    files, cut = codework.list_files(code_dir)
+                    return self._json({"dir": code_dir, "files": files, "cut": cut})
+                if url.path == "/api/code/file":
+                    return self._json(codework.read_file(code_dir, q.get("path", [""])[0]))
+                if url.path == "/api/code/changes":
+                    return self._json({"changes": app.store.code_changes(app.orch.project_id)})
+                if url.path == "/api/code/diff":
+                    ch = app.store.code_change(int(q.get("id", ["0"])[0] or 0))
+                    if not ch or ch["project_id"] != app.orch.project_id:
+                        return self._json({"error": "not found"}, 404)
+                    try:
+                        patch = app.orch.cp.patch(ch["project_id"], code_dir, ch["before"], ch["after"])
+                    except Exception as e:
+                        return self._json({"error": str(e)}, 500)
+                    return self._json({"patch": patch})
+                return self._json({"error": "not found"}, 404)
 
             def do_POST(self):
                 url = urlparse(self.path)
@@ -397,9 +440,41 @@ class App:
                     return self._json({"ok": True, "project_id": pid})
                 elif path == "/api/project/update":
                     roles = data.get("roles")
+                    code_dir = data.get("code_dir")
+                    if code_dir is not None:
+                        from codework import check_code_dir
+                        code_dir, err = check_code_dir(str(code_dir))
+                        if err:
+                            return self._json({"error": err}, 400)
+                        app.store.update_project(int(data["project_id"]), code_dir=code_dir)
                     app.store.update_project(int(data["project_id"]), data.get("name"),
                                              data.get("instructions"), data.get("doc_link"),
                                              data.get("memory"), roles if isinstance(roles, dict) else None)
+                elif path == "/api/pick-folder":
+                    folder = pick_folder()
+                    if folder is None:
+                        return self._json({"error": "Couldn't open the folder picker. Paste the folder path instead."}, 500)
+                    return self._json({"ok": True, "path": folder})
+                elif path == "/api/approve":
+                    if not app.orch.approve_commands(int(data.get("msg_id", 0)), bool(data.get("ok"))):
+                        return self._json({"error": "That request isn't waiting any more."}, 409)
+                elif path == "/api/code/run":
+                    rel = str(data.get("path", ""))
+                    if rel.lower().endswith((".html", ".htm")):
+                        from codework import inside
+                        code_dir = app.orch.code_dir()
+                        full = inside(code_dir, rel) if code_dir else None
+                        if not full or not os.path.isfile(full):
+                            return self._json({"error": "File not found."}, 404)
+                        webbrowser.open("file:///" + full.replace("\\", "/").lstrip("/"))
+                    else:
+                        err = app.orch.run_file(rel)
+                        if err:
+                            return self._json({"error": err}, 400)
+                elif path == "/api/code/undo":
+                    err = app.orch.undo_change(int(data.get("id", 0)))
+                    if err:
+                        return self._json({"error": err}, 400)
                 elif path == "/api/unattach":
                     i = int(data.get("index", -1))
                     if 0 <= i < len(app.orch.pending_files):

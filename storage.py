@@ -53,6 +53,13 @@ class Store:
             self._db.execute("ALTER TABLE projects ADD COLUMN memory TEXT NOT NULL DEFAULT ''")
         if pcols and "roles" not in pcols:
             self._db.execute("ALTER TABLE projects ADD COLUMN roles TEXT NOT NULL DEFAULT '{}'")
+        if pcols and "code_dir" not in pcols:
+            self._db.execute("ALTER TABLE projects ADD COLUMN code_dir TEXT NOT NULL DEFAULT ''")
+        self._db.execute("""
+            CREATE TABLE IF NOT EXISTS code_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, project_id INTEGER,
+                created REAL NOT NULL, speaker TEXT NOT NULL, before TEXT NOT NULL, after TEXT NOT NULL,
+                files TEXT NOT NULL DEFAULT '[]', undone INTEGER NOT NULL DEFAULT 0)""")
         self._db.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS projects (
@@ -62,6 +69,7 @@ class Store:
                 doc_link TEXT NOT NULL DEFAULT '',
                 memory TEXT NOT NULL DEFAULT '',
                 roles TEXT NOT NULL DEFAULT '{}',
+                code_dir TEXT NOT NULL DEFAULT '',
                 created REAL NOT NULL,
                 updated REAL NOT NULL
             )""")
@@ -155,12 +163,12 @@ class Store:
     def projects(self):
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, name, instructions, doc_link, memory, roles FROM projects ORDER BY updated DESC").fetchall()
+                "SELECT id, name, instructions, doc_link, memory, roles, code_dir FROM projects ORDER BY updated DESC").fetchall()
         return [self._proj(r) for r in rows]
 
     @staticmethod
     def _proj(r):
-        d = dict(zip(("id", "name", "instructions", "doc_link", "memory", "roles"), r))
+        d = dict(zip(("id", "name", "instructions", "doc_link", "memory", "roles", "code_dir"), r))
         try:
             d["roles"] = json.loads(d["roles"] or "{}")
         except ValueError:
@@ -171,16 +179,18 @@ class Store:
         if project_id is None:
             return None
         with self._lock:
-            row = self._db.execute("SELECT id, name, instructions, doc_link, memory, roles FROM projects WHERE id = ?",
+            row = self._db.execute("SELECT id, name, instructions, doc_link, memory, roles, code_dir FROM projects WHERE id = ?",
                                    (project_id,)).fetchone()
         return self._proj(row) if row else None
 
-    def update_project(self, project_id, name=None, instructions=None, doc_link=None, memory=None, roles=None):
+    def update_project(self, project_id, name=None, instructions=None, doc_link=None, memory=None, roles=None,
+                       code_dir=None):
         with self._lock:
             if roles is not None:
                 self._db.execute("UPDATE projects SET roles = ?, updated = ? WHERE id = ?",
                                  (json.dumps({k: str(v).strip()[:300] for k, v in roles.items()}), time.time(), project_id))
-            for col, val in (("name", name), ("instructions", instructions), ("doc_link", doc_link), ("memory", memory)):
+            for col, val in (("name", name), ("instructions", instructions), ("doc_link", doc_link), ("memory", memory),
+                             ("code_dir", code_dir)):
                 if val is not None:
                     v = val.strip()[:80] if col == "name" else val.strip()
                     if col == "name" and not v:
@@ -240,6 +250,41 @@ class Store:
                 rows = self._db.execute("SELECT id, chat_id, created, tool, doc_id, summary FROM doc_edits "
                                         "WHERE chat_id = ? ORDER BY id DESC LIMIT ?", (chat_id, limit)).fetchall()
         return [dict(zip(("id", "chat_id", "created", "tool", "doc_id", "summary"), r)) for r in rows]
+
+    # ----- code changes (one row per model turn that changed files) -----
+
+    def add_code_change(self, chat_id, project_id, speaker, before, after, files):
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO code_changes (chat_id, project_id, created, speaker, before, after, files) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (chat_id, project_id, time.time(), speaker, before, after, json.dumps(files)))
+            self._db.commit()
+            return cur.lastrowid
+
+    def code_changes(self, project_id, limit=40):
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, chat_id, created, speaker, before, after, files, undone FROM code_changes "
+                "WHERE project_id = ? ORDER BY id DESC LIMIT ?", (project_id, limit)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(zip(("id", "chat_id", "created", "speaker", "before", "after", "files", "undone"), r))
+            d["files"] = json.loads(d["files"] or "[]")
+            out.append(d)
+        return out
+
+    def code_change(self, change_id):
+        with self._lock:
+            row = self._db.execute("SELECT id, project_id, before, after FROM code_changes WHERE id = ?",
+                                   (change_id,)).fetchone()
+        return dict(zip(("id", "project_id", "before", "after"), row)) if row else None
+
+    def mark_undone(self, project_id, from_id):
+        with self._lock:
+            self._db.execute("UPDATE code_changes SET undone = 1 WHERE project_id = ? AND id >= ?",
+                             (project_id, from_id))
+            self._db.commit()
 
     # ----- attachments -----
 

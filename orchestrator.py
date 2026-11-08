@@ -1,9 +1,13 @@
 """The orchestrator: decides who speaks next, builds each model's prompt,
 and pauses for you when a model asks a question."""
 
+import os
 import re
+import sys
 import threading
 import time
+
+from codework import COMMAND_TIMEOUT, check_code_dir, run_command
 
 # Each turn re-sends the conversation. Above this size, the oldest middle
 # messages are left out (the first message - your goal - is always kept).
@@ -99,6 +103,25 @@ Write an updated summary of under 350 words in plain bullet points. Keep: the us
 
 Last line must be exactly: DONE"""
 
+CODE_LINE = """
+=== CODING ===
+This project has a code folder on the user's PC: {path}
+You are working inside it (it is your current folder). {role}
+- To run anything (tests, scripts, installs, git, builds), put each command on its own line just above your last line, as: RUN: <command>
+  The app shows them to the user, who approves or denies them; then everyone sees the output. Commands run in {shell} in the code folder, with a {timeout}-second limit each. Don't run servers, watchers or anything interactive; tell the user how to start those instead. At most 3 commands per message. Prefer read-only checks before anything that changes the system, and never run anything destructive (deleting folders, git push, force-resets) unless the user asked for exactly that.
+- Never read or change files outside the code folder.
+- Work as a team: the editor makes changes in small, reviewable steps and says what changed and why; the reviewer reads the changed files and the diff, points out real bugs or risks, and suggests concrete fixes. Test changes by asking to run them.
+{changes}"""
+
+CODE_ROLE_EDITOR = "You are the editor: change files directly with your file edit and write tools."
+CODE_ROLE_REVIEWER = ("You are the reviewer: you can read files and run read-only checks yourself, but you can't change "
+                      "files. {editor} makes the changes; when you want one, say exactly which file and what to change.")
+CODE_ROLE_NO_EDITOR = ("Nobody can edit files right now (the editor, Claude, is unavailable). Read and review, and "
+                       "describe exact changes (file and code) for the user to apply or for later.")
+
+RUN_RE = re.compile(r"^\W*RUN\s*:\s*(.+?)\s*$", re.IGNORECASE)
+MAX_RUNS = 3
+
 DOC_LINE = """
 Project document for this chat: {link}
 This is the shared document the group is working on.
@@ -169,9 +192,27 @@ def guess_choices(question):
     return []
 
 
+def split_runs(text):
+    """Pull 'RUN: command' lines out of a reply. Returns (text without them, [commands])."""
+    keep, runs = [], []
+    for line in text.splitlines():
+        m = RUN_RE.match(line)
+        if m:
+            cmd = m.group(1).strip().strip("`").strip()
+            if cmd and cmd not in runs:
+                runs.append(cmd[:500])
+        else:
+            keep.append(line)
+    return "\n".join(keep), runs[:MAX_RUNS]
+
+
 class Orchestrator:
-    def __init__(self, store, runners):
+    def __init__(self, store, runners, checkpoints=None):
         self.store = store
+        self.cp = checkpoints          # codework.Checkpoints, for diffs and undo in code folders
+        self.pending_commands = None   # {"msg_id", "speaker", "commands"} waiting for your approval
+        self.question_open = False     # a question is waiting for your answer
+        self._cmd_proc = None
         self.runners = {r.key: r for r in runners}
         self.order = [r.key for r in runners]
         self.enabled = {r.key: True for r in runners}
@@ -264,6 +305,11 @@ class Orchestrator:
                     names.append(f["name"])
                 self.pending_files = []
                 text += "\n\n" + "\n".join(f"📎 {n}" for n in names)
+            if self.pending_commands:
+                self.store.add(self.chat_id, "Amalgam", "system",
+                               "You replied instead of approving, so those commands were skipped.")
+                self.pending_commands = None
+            self.question_open = False
             self.store.add(self.chat_id, "You", "user", text)
             if self.status == "running":
                 # The models will see it on their next turn.
@@ -289,6 +335,10 @@ class Orchestrator:
 
     def stop(self):
         self._stop.set()
+        proc = self._cmd_proc
+        if proc and proc.poll() is None:
+            from codework import _kill_tree
+            _kill_tree(proc)
         for r in self.runners.values():
             r.cancel()
         t = self._thread
@@ -309,6 +359,8 @@ class Orchestrator:
             "attachments": self.store.attachments(self.chat_id) if self.chat_id else [],
             "doc_edits": self.store.doc_edits(self.chat_id, self.project_id) if self.chat_id or self.project_id else [],
             "condensed": self.store.summary(self.chat_id)[1] > 0 if self.chat_id else False,
+            "code": {"dir": self.code_dir(), "checkpoints": bool(self.cp and self.cp.available),
+                     "pending_command": self.pending_commands["msg_id"] if self.pending_commands else None},
             "models": [
                 {"key": k, "name": self.runners[k].name, "enabled": self.enabled[k],
                  "status": self.runners[k].status(), "speed": self.runners[k].speed}
@@ -353,6 +405,11 @@ class Orchestrator:
                     result = self._turn(key)
                     if result == "error":
                         return
+                    if result == "command":
+                        if self.last_question:
+                            self._publish(self.last_question)
+                        self._pause_for_user()
+                        return
                     if result == "question":
                         self._publish(self.last_question)   # you asked this model directly: no check
                         asked = True
@@ -374,6 +431,11 @@ class Orchestrator:
                         return
                     if result == "rested":
                         continue
+                    if result == "command":   # wait for you to approve or deny the commands
+                        if self.last_question:
+                            self._publish(self.last_question)
+                        self._pause_for_user()
+                        return
                     if result == "question":
                         outcome = self._ask_user(key)
                         if outcome == "error":
@@ -439,6 +501,10 @@ class Orchestrator:
         runner = self.runners[key]
         self.live = {"activity": "starting", "text": "", "rev": self.live["rev"] + 1}
         self.speaker = runner.name
+        code_dir = self.code_dir()
+        runner.code_dir = code_dir
+        before = self._checkpoint(code_dir, f"before {runner.name}'s turn")
+        self.last_question = None
         prompt = self._build_prompt(key, extra)
         allow_edits = bool(self.chat_settings().get("allow_edits"))
 
@@ -451,8 +517,10 @@ class Orchestrator:
             live["rev"] += 1
             self.live = live
 
+        reply_ok = False
         try:
             reply = runner.reply(prompt, allow_edits=allow_edits, on_event=on_event)
+            reply_ok = True
         except Exception as e:  # RunnerError or anything unexpected
             others = [k for k in self._active() if k != key]
             if self._stop.is_set():
@@ -481,13 +549,18 @@ class Orchestrator:
         finally:
             self.speaker = None
             self.turn_seq += 1
+            runner.code_dir = None
+            if not reply_ok:   # failed or stopped turn: still log any files it changed
+                self._record_change(code_dir, before, runner.name)
         if self._stop.is_set():
             self._note("Stopped. Send a message to continue.")
+            self._record_change(code_dir, before, runner.name)
             return "error"
         for edit in getattr(runner, "last_edits", []) or []:
             self.store.add_doc_edit(self.chat_id, self.project_id, edit["tool"], edit["doc_id"], edit["summary"])
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
         reply, choices = split_choices(reply)
+        reply, runs = split_runs(reply) if code_dir else (reply, [])
         body, signal, question = parse_signal(reply)
         keep, remembered = [], []
         for line in body.splitlines():
@@ -498,6 +571,7 @@ class Orchestrator:
                 keep.append(line)
         body = "\n".join(keep).strip() or body
         self.store.add(self.chat_id, runner.name, "model", body)
+        self._record_change(code_dir, before, runner.name)
         if remembered:
             saved = self.store.add_memory(self.project_id, remembered)
             if saved:
@@ -506,13 +580,166 @@ class Orchestrator:
             question = question or "(asked for your input)"
             # held back until a teammate has checked it (see _ask_user)
             self.last_question = (runner.name, question, choices or guess_choices(question))
-            return "question"
+            if not runs:
+                return "question"
+        if runs:
+            msg = self.store.add(self.chat_id, runner.name, "command", "\n".join(runs))
+            self.pending_commands = {"msg_id": msg["id"], "speaker": runner.name, "commands": runs}
+            return "command"
         if signal == "HOLD":
             self.last_hold = question or "they think it's too early to ask"
         return signal
 
+    # ----- coding area -----
+
+    def code_dir(self):
+        project = self.store.project(self.project_id)
+        if not project or not project.get("code_dir"):
+            return None
+        path, err = check_code_dir(project["code_dir"])
+        return path if path and not err else None
+
+    def _checkpoint(self, code_dir, message):
+        if not (code_dir and self.cp and self.cp.available):
+            return None
+        try:
+            return self.cp.checkpoint(self.project_id, code_dir, message)
+        except Exception as e:
+            print("Checkpoint error:", e)
+            return None
+
+    def _record_change(self, code_dir, before, who):
+        """After a turn or command: save a checkpoint and log which files changed."""
+        if not before:
+            return
+        after = self._checkpoint(code_dir, f"after {who}")
+        if not after or after == before:
+            return
+        try:
+            files = self.cp.changed_files(self.project_id, code_dir, before, after)
+        except Exception as e:
+            print("Diff error:", e)
+            return
+        if not files:
+            return
+        self.store.add_code_change(self.chat_id, self.project_id, who, before, after, files)
+        names = ", ".join(f["path"] for f in files[:6]) + (f" and {len(files) - 6} more" if len(files) > 6 else "")
+        plus, minus = sum(f["added"] for f in files), sum(f["removed"] for f in files)
+        self._note(f"{who} changed {len(files)} file{'s' if len(files) != 1 else ''}: {names} (+{plus} −{minus}). "
+                   "See the Code tab for the changes or to undo them.")
+
+    def approve_commands(self, msg_id, ok):
+        """You clicked Approve or Deny on a command request."""
+        with self._lock:
+            pc = self.pending_commands
+            if not pc or pc["msg_id"] != msg_id or self.status == "running":
+                return False
+            self.pending_commands = None
+            self.status = "running"
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._commands_then_continue, args=(pc, ok), daemon=True)
+            self._thread.start()
+        return True
+
+    def _run_one(self, command, code_dir, who):
+        from runners import clean_env
+        self.speaker = "Terminal"
+        self.live = {"activity": f"running {command[:60]}", "text": "", "rev": self.live["rev"] + 1}
+        before = self._checkpoint(code_dir, "before command")
+        try:
+            code, out, timed_out = run_command(command, code_dir, env=clean_env(),
+                                               on_proc=lambda p: setattr(self, "_cmd_proc", p))
+        finally:
+            self._cmd_proc = None
+            self.speaker = None
+        status = "timed out" if timed_out else ("stopped" if self._stop.is_set() else f"exit code {code}")
+        self.store.add(self.chat_id, who, "output", f"$ {command}\n[{status}]\n{out or '(no output)'}")
+        self._record_change(code_dir, before, "Commands")
+        return code == 0 and not timed_out
+
+    def _commands_then_continue(self, pc, ok):
+        try:
+            code_dir = self.code_dir()
+            if not ok:
+                self.store.add(self.chat_id, "You", "output",
+                               "Denied: " + "; ".join(pc["commands"]) + "\n(The user didn't allow these commands.)")
+            elif not code_dir:
+                self._note("The project's code folder is missing, so the commands didn't run.")
+            else:
+                for cmd in pc["commands"]:
+                    if self._stop.is_set():
+                        break
+                    self._run_one(cmd, code_dir, "Terminal")
+            self.turn_seq += 1
+            if self._stop.is_set():
+                self._note("Stopped. Send a message to continue.")
+                return
+            if self.question_open:      # a question is still waiting for you
+                self._pause_for_user()
+                return
+            self._loop("")
+        finally:
+            with self._lock:
+                if self.status == "running":
+                    self.status = "idle"
+                self.speaker = None
+
+    def run_file(self, rel):
+        """You pressed Run on a file in the Code tab: run it now (your click is the approval)."""
+        from codework import inside
+        code_dir = self.code_dir()
+        full = inside(code_dir, rel) if code_dir else None
+        if not full or not os.path.isfile(full):
+            return "File not found."
+        ext = os.path.splitext(full)[1].lower()
+        py = "python" if sys.platform == "win32" else "python3"
+        commands = {".py": f'{py} "{rel}"', ".js": f'node "{rel}"', ".mjs": f'node "{rel}"',
+                    ".ps1": f'& ".\\{rel}"' if sys.platform == "win32" else None,
+                    ".bat": f'cmd /c "{rel}"' if sys.platform == "win32" else None,
+                    ".sh": f'bash "{rel}"'}
+        command = commands.get(ext)
+        if not command:
+            return "Amalgam can't run that kind of file."
+        with self._lock:
+            if self.status == "running":
+                return "Wait for the models to finish, or press Stop first."
+            if self.chat_id is None:
+                self.chat_id = self.store.new_chat(f"Run {os.path.basename(rel)}", self.project_id)
+                self.store.set_chat_settings(self.chat_id, **self.pending_chat_settings)
+            self.status = "running"
+            self._stop.clear()
+
+        def work():
+            try:
+                self._run_one(command, code_dir, "You ran")
+                self.turn_seq += 1
+            finally:
+                with self._lock:
+                    if self.status == "running":
+                        self.status = "waiting" if (self.question_open or self.pending_commands) else "idle"
+        self._thread = threading.Thread(target=work, daemon=True)
+        self._thread.start()
+        return None
+
+    def undo_change(self, change_id):
+        change = self.store.code_change(change_id)
+        code_dir = self.code_dir()
+        if not change or change["project_id"] != self.project_id or not code_dir or not self.cp:
+            return "Can't find that change for this project."
+        if self.status == "running":
+            return "Wait for the models to finish, or press Stop first."
+        try:
+            self.cp.restore(self.project_id, code_dir, change["before"])
+        except Exception as e:
+            return f"Undo failed: {e}"
+        self.store.mark_undone(self.project_id, change_id)
+        if self.chat_id:
+            self._note("You undid file changes back to before change #%d. The models will see the files as they are now." % change_id)
+        return None
+
     def _publish(self, q):
         speaker, question, choices = q
+        self.question_open = True
         self.store.add(self.chat_id, speaker, "question",
                        question + "".join(f"\nCHOICE: {c}" for c in choices))
 
@@ -610,11 +837,33 @@ class Orchestrator:
         elif tools:
             doc += EDITS_OFF
 
+        code_dir = self.code_dir()
+        if code_dir:
+            claude_on = "claude" in self._active()
+            if key == "claude":
+                role = CODE_ROLE_EDITOR
+            elif claude_on:
+                role = CODE_ROLE_REVIEWER.format(editor=self.runners["claude"].name)
+            else:
+                role = CODE_ROLE_NO_EDITOR
+            changes = ""
+            recent = [c for c in self.store.code_changes(self.project_id, 1) if not c["undone"]]
+            if recent and recent[0]["chat_id"] == self.chat_id and self.cp:
+                c = recent[0]
+                try:
+                    patch = self.cp.patch(self.project_id, code_dir, c["before"], c["after"], max_chars=8000)
+                except Exception:
+                    patch = ""
+                if patch:
+                    changes = f"Latest file changes, by {c['speaker']}:\n```diff\n{patch}\n```\n"
+            doc += CODE_LINE.format(path=code_dir, role=role, changes=changes, timeout=COMMAND_TIMEOUT,
+                                    shell="Windows PowerShell" if sys.platform == "win32" else "bash")
+
         files = self.store.attachments(self.chat_id) if self.chat_id else []
         if files:
             doc += ("\nFiles the user attached (in your working folder; open them with your file-reading tool "
                     "when they're relevant, and describe what matters for the others):\n"
-                    + "\n".join(f"- {f['path']}" for f in files) + "\n")
+                    + "\n".join(f"- {os.path.join(runner.workdir, f['path']) if code_dir else f['path']}" for f in files) + "\n")
 
         summary, upto = self.store.summary(self.chat_id) if self.chat_id else ("", 0)
         lines = [f"[Summary of the earlier part of this conversation]:\n{summary}"] if summary else []
@@ -625,6 +874,11 @@ class Orchestrator:
                 continue
             if m["kind"] == "question":
                 lines.append(f"[{m['speaker']} asked the user]: {m['text']}")
+            elif m["kind"] == "command":
+                lines.append(f"[{m['speaker']} asked to run]: " + "; ".join(m["text"].splitlines()))
+            elif m["kind"] == "output":
+                out = m["text"] if len(m["text"]) <= 4000 else m["text"][:2000] + "\n[...]\n" + m["text"][-2000:]
+                lines.append(f"[Command result]:\n{out}")
             else:
                 lines.append(f"[{m['speaker']}]: {m['text']}")
         return PROMPT_TEMPLATE.format(name=name, others=others_text, tools=tools, doc=doc, extra=extra,

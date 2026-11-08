@@ -79,6 +79,26 @@ Your normal browser isn't involved.
 - The **Project** card (right panel) holds instructions both models follow in every chat of that project,
   and a default doc link for new chats. Deleting a project keeps its chats (they move to **Chats**).
 
+## Coding area
+
+Give a project a **code folder** (Project card → Code folder → Choose…). Pick a folder for just
+that project, like your app's folder, not your whole Documents folder. Chats in that project then
+get a **Chat | Code** switch at the top.
+
+- **Claude (Claude Code) is the editor.** It can create and change files, but only inside the
+  code folder. **GPT (Codex) is the reviewer.** It reads the files and the changes and points out
+  problems, but can't change anything.
+- **Commands need your OK.** When a model wants to run something (tests, a script, an install,
+  git), a blue box shows the exact command with **Approve and run** and **Deny**. Approved
+  commands run in PowerShell in the code folder (2-minute limit each), and everyone sees the
+  output. Typing a reply instead skips them.
+- **Code tab:** *Files* to read any file (▶ Run works for .py, .js, .ps1, .bat and .html files),
+  *Changes* to see exactly what each turn changed, and *Terminal* for command output.
+- **Undo:** every change is saved as a checkpoint. In *Changes*, **Undo to before this** puts
+  the files back. Checkpoints are kept in a separate private history under
+  `%LOCALAPPDATA%\AIAmalgam\checkpoints`, so your project's own Git history is never touched.
+  This needs Git, which Claude Code already installed for you.
+
 ## Managing chats
 - Hover a chat in the sidebar: ✎ renames it, 🗑 deletes it.
 - The project menu next to the chat title moves the open chat into (or out of) a project.
