@@ -222,6 +222,7 @@ PHONE_FILE = os.path.join(DATA_DIR, "phone.json")
 STATIC = {   # served without the key, so the phone can install the app and pair
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/offline.html": ("offline.html", "text/html; charset=utf-8"),
     "/icon-192.png": ("icon-192.png", "image/png"),
     "/icon-512.png": ("icon-512.png", "image/png"),
 }

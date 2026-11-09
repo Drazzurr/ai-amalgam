@@ -52,7 +52,11 @@ def check():
     try:
         latest = _get(VERSION_URL + f"?t={int(time.time())}", timeout=8).decode("utf-8").strip()
     except Exception as e:
-        return {"current": cur, "error": f"Couldn't reach GitHub ({e.__class__.__name__})."}
+        msg = "Couldn't reach GitHub. Check the internet connection and try again."
+        if os.path.isfile(os.path.expanduser("~/AIAmalgam/phone.json")):
+            msg = ("Couldn't reach GitHub. If your phone just switched between Wi-Fi and mobile data, close the "
+                   "Terminal app fully and open it again, then try again.")
+        return {"current": cur, "error": msg}
     return {"current": cur, "latest": latest, "available": _parse(latest) > _parse(cur)}
 
 

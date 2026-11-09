@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141517"><title>AI Amalgam</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1a1b1e; color: #e8e9ec;
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
+  h1 { font-size: 22px; margin: 18px 0 8px; } p { color: #a3a6ad; margin: 0 auto 22px; max-width: 320px; }
+  a.btn { display: inline-block; background: #2f8f68; color: #fff; text-decoration: none; padding: 13px 22px; border-radius: 12px; font-weight: 600; }
+  .wait { margin-top: 18px; font-size: 13.5px; color: #7d8088; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #6c8cff; margin-right: 6px; animation: p 1s infinite; }
+  @keyframes p { 50% { opacity: .3; } }
+</style></head><body><div>
+  <svg width="84" height="84" viewBox="0 0 140 140"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>
+  <h1>AI Amalgam isn't running</h1>
+  <p>Open the <b>Terminal</b> app. It starts AI Amalgam by itself. Then come back here; this page reconnects on its own.</p>
+  <a class="btn" href="intent://#Intent;package=com.android.virtualization.terminal;end">Open Terminal</a>
+  <div class="wait"><span class="dot"></span>Waiting for AI Amalgam…</div>
+</div>
+<script>
+  async function check() {
+    try { const r = await fetch("/manifest.webmanifest", {cache: "no-store"}); if (r.ok) { location.replace("/"); return; } } catch (e) {}
+    setTimeout(check, 2000);
+  }
+  setTimeout(check, 1500);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+</script></body></html>
