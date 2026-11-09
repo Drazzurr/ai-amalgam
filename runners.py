@@ -230,6 +230,93 @@ SIGNAL_TAIL_RE = re.compile(r"\n?\W*(NEXT|DONE|AGREE|HOLD\b.*|NEED USER\b.*)\W*$
 CHOICE_LINE_RE = re.compile(r"^\W*CHOICE\s*:.*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
 
 
+def save_doc_copy(workdir, file_id, text):
+    """Keep a local copy of a Google Doc a model just read, for turns when Drive doesn't load."""
+    folder = os.path.join(workdir, "docs")
+    os.makedirs(folder, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_-]", "", file_id)[:80]
+    with open(os.path.join(folder, safe + ".txt"), "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def doc_copy(workdir, file_id):
+    """(path, age in seconds) of the saved copy of a doc, or (None, None)."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "", file_id or "")[:80]
+    path = os.path.join(workdir, "docs", safe + ".txt")
+    if safe and os.path.isfile(path):
+        return path, time.time() - os.path.getmtime(path)
+    return None, None
+
+
+def find_new_images(since, dest_dir, prefix):
+    """Images Codex generated during this turn. Codex keeps them in its session log (as base64)
+    and, in newer versions, as files under ~/.codex; collect both and save them as files."""
+    import base64
+    saved, seen = [], set()
+    roots = [os.path.join(codex_home(), "sessions"), os.path.join(codex_home(), "generated_images"),
+             os.path.join(codex_home(), "images")]
+    for root in roots:
+        for dirpath, _dirs, names in os.walk(root):
+            for n in names:
+                p = os.path.join(dirpath, n)
+                try:
+                    if os.path.getmtime(p) < since - 2:
+                        continue
+                except OSError:
+                    continue
+                low = n.lower()
+                if low.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    os.makedirs(dest_dir, exist_ok=True)
+                    out = os.path.join(dest_dir, f"{prefix}-{len(saved) + 1}{os.path.splitext(low)[1]}")
+                    shutil.copyfile(p, out)
+                    saved.append(out)
+                elif low.endswith(".jsonl"):
+                    try:
+                        with open(p, encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                    except OSError:
+                        continue
+                    for line in lines:
+                        if "image" not in line or len(line) < 4000:
+                            continue
+                        if '"input_image"' in line or '"role":"user"' in line or '"role": "user"' in line:
+                            continue        # a picture the user attached, not one GPT made
+                        try:
+                            ev = json.loads(line)
+                            ts = ev.get("timestamp")
+                            if ts and to_epoch(ts) and to_epoch(ts) < since - 2:
+                                continue
+                        except ValueError:
+                            pass
+                        for m in re.finditer(r'(?:data:image/(png|jpeg|webp);base64,)?((?:iVBORw0KGgo|/9j/|UklGR)[A-Za-z0-9+/=]{4000,})', line):
+                            blob = m.group(2)
+                            if blob[:64] in seen:
+                                continue
+                            seen.add(blob[:64])
+                            try:
+                                raw = base64.b64decode(blob + "=" * (-len(blob) % 4))
+                            except Exception:
+                                continue
+                            ext = ".png" if raw[:4] == b"\x89PNG" else ".jpg" if raw[:2] == b"\xff\xd8" else ".webp"
+                            os.makedirs(dest_dir, exist_ok=True)
+                            out = os.path.join(dest_dir, f"{prefix}-{len(saved) + 1}{ext}")
+                            with open(out, "wb") as f:
+                                f.write(raw)
+                            saved.append(out)
+    # the same picture can show up both as a file and in the log: keep one of each
+    import hashlib
+    unique, hashes = [], set()
+    for p in saved:
+        with open(p, "rb") as f:
+            h = hashlib.sha1(f.read()).hexdigest()
+        if h in hashes:
+            os.remove(p)
+        else:
+            hashes.add(h)
+            unique.append(p)
+    return unique
+
+
 def visible_text(text):
     """Text for the live preview: hide the NEXT/DONE/NEED USER control line at the end,
     including a half-typed one like 'NE'."""
@@ -528,13 +615,28 @@ class ClaudeRunner(Runner):
     def _diagnose(self, line):
         """Note which connectors loaded, which tools were refused, and connector errors, so the app
         can say why Claude couldn't open Drive instead of leaving it to guess."""
-        if not line.startswith("{") or not any(k in line for k in ('"init"', '"permission_denials"', '"is_error"')):
+        if not line.startswith("{") or not any(k in line for k in ('"init"', '"permission_denials"', '"is_error"',
+                                                                   '"tool_use"', '"tool_result"')):
             return
         try:
             ev = json.loads(line)
         except ValueError:
             return
         d = self.diag
+        if ev.get("type") == "assistant":
+            for block in (ev.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    d.setdefault("uses", {})[block.get("id")] = (block.get("name", ""), block.get("input") or {})
+        if ev.get("type") == "user":
+            for block in (ev.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" and not block.get("is_error"):
+                    name, inp = d.get("uses", {}).get(block.get("tool_use_id"), ("", {}))
+                    if re.search(r"Google_Docs__read_doc|Google_Drive__read_file_content", name):
+                        c = block.get("content")
+                        text = c if isinstance(c, str) else "\n".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
+                        fid = inp.get("documentId") or inp.get("fileId")
+                        if fid and len(text) > 300:
+                            save_doc_copy(self.workdir, fid, text)
         if ev.get("type") == "system" and ev.get("subtype") == "init":
             for srv in ev.get("mcp_servers") or []:
                 if isinstance(srv, dict) and srv.get("name"):
@@ -652,7 +754,28 @@ class CodexRunner(Runner):
         info = read_codex_rate_limits()
         return {"kind": "percent", **(info or {}), "link": "https://chatgpt.com/settings/usage"}
 
+    image_flag = ["-c", "features.image_generation=true"]
+
+    def _maybe_save_doc(self, item):
+        """When GPT reads a Google Doc through its Drive app, keep a local copy too."""
+        try:
+            args = item.get("arguments") or {}
+            if isinstance(args, str):
+                args = json.loads(args)
+            ref = " ".join(str(v) for v in (args.values() if isinstance(args, dict) else []))
+            m = re.search(r"([A-Za-z0-9_-]{25,})", ref)
+            res = item.get("result") or {}
+            parts = res.get("content") if isinstance(res, dict) else res
+            text = parts if isinstance(parts, str) else "\n".join(
+                p.get("text", "") for p in (parts or []) if isinstance(p, dict))
+            if m and len(text) > 300 and re.search(r"fetch|read|get|open", str(item.get("tool", "")), re.I):
+                save_doc_copy(self.workdir, m.group(1), text)
+        except Exception:
+            pass
+
     def _reply(self, prompt, allow_edits, on_event):
+        self.last_images = []
+        started = time.time()
         fd, out_file = tempfile.mkstemp(prefix="amalgam_gpt_", suffix=".txt")
         os.close(fd)
         errors = []
@@ -680,6 +803,8 @@ class CodexRunner(Runner):
                     on_event(activity="thinking")
                 elif itype in ("mcp_tool_call", "tool_call", "function_call"):
                     on_event(activity=tool_activity(f"{item.get('server', '')} {item.get('tool', '') or item.get('name', '')}"))
+                    if kind == "item.completed":
+                        self._maybe_save_doc(item)
                 elif itype == "web_search":
                     on_event(activity="searching the web")
                 elif itype == "command_execution":
@@ -695,13 +820,23 @@ class CodexRunner(Runner):
                 "--sandbox", "read-only",
                 # (no --ephemeral: Codex's session log holds the plan usage shown in the Usage card)
                 "--output-last-message", out_file,
-            ] + [f"--image={p}" for p in getattr(self, "images", []) if os.path.isfile(p)] + self._speed() + ["-"]
+            ] + [f"--image={p}" for p in getattr(self, "images", []) if os.path.isfile(p)] + self._speed() + \
+                self.image_flag + ["-"]
             try:
                 out, _ = self._run(args, prompt, on_line)
             except RunnerError as e:
+                if self.image_flag and not self._stopped and "image_generation" in str(e) + " ".join(errors):
+                    print("Codex doesn't know the image_generation feature; turning it off.")
+                    CodexRunner.image_flag = []
+                    return self._reply(prompt, allow_edits, on_event)
                 if errors and not self._stopped:
                     raise RunnerError(f"GPT returned an error:\n{errors[-1][-800:]}")
                 raise e
+            try:
+                dest = getattr(self, "image_dir", None) or os.path.join(self.workdir, "images")
+                self.last_images = find_new_images(started, dest, time.strftime("gpt-%Y%m%d-%H%M%S"))
+            except Exception as e:
+                print("Couldn't collect generated images:", e)
             try:
                 with open(out_file, encoding="utf-8", errors="replace") as f:
                     text = f.read().strip()
@@ -793,6 +928,21 @@ class DemoRunner(Runner):
             lines.append("DONE")
         else:
             lines.append("NEXT")
+        self.last_images = []
+        if self.key == "gpt" and "draw" in prompt.lower() and getattr(self, "image_dir", None):
+            try:
+                from PIL import Image, ImageDraw
+                os.makedirs(self.image_dir, exist_ok=True)
+                im = Image.new("RGB", (512, 512), (40, 44, 60))
+                d = ImageDraw.Draw(im)
+                d.ellipse((96, 96, 416, 416), fill=(200, 160, 80))
+                d.text((180, 240), "demo image", fill=(20, 20, 20))
+                path = os.path.join(self.image_dir, f"gpt-demo-{self.turns}.png")
+                im.save(path)
+                self.last_images = [path]
+                lines.insert(0, "(GPT, demo) Here's a quick sketch.")
+            except Exception:
+                pass
         if "TITLE: <" in prompt:
             lines.insert(-1, "TITLE: Demo planning session")
         full = "\n".join(lines)

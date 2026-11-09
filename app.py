@@ -388,6 +388,30 @@ class App:
         self.games["user"] = user
         threading.Thread(target=work, daemon=True).start()
 
+    def update_clis(self):
+        """Update Claude Code (and Codex) to their latest versions; fixes come out often."""
+        if getattr(self, "cli_update", {}).get("state") == "running":
+            return
+        self.cli_update = {"state": "running", "log": []}
+
+        def work():
+            from runners import clean_env
+            for name, cmd in (("Claude Code", ["claude", "update"]),):
+                exe = shutil.which(cmd[0])
+                if not exe:
+                    self.cli_update["log"].append(f"{name}: not found")
+                    continue
+                try:
+                    r = subprocess.run([exe] + cmd[1:], capture_output=True, timeout=600, env=clean_env(),
+                                       creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
+                    out = (r.stdout + r.stderr).decode("utf-8", "replace").strip().splitlines()
+                    self.cli_update["log"].append(f"{name}: " + (out[-1] if out else "done"))
+                except Exception as e:
+                    self.cli_update["log"].append(f"{name}: {e}")
+            self.cli_update["state"] = "done"
+            self.refresh_connections()
+        threading.Thread(target=work, daemon=True).start()
+
     def install_game_helpers(self):
         if self.games["state"] == "running":
             return
@@ -445,8 +469,14 @@ class App:
 
         def work():
             models = {}
+            self.cli_versions = {}
             for key in self.orch.order:
                 runner = self.orch.runners[key]
+                try:
+                    from runners import run_command as rc
+                    self.cli_versions[key] = (rc(runner.exe, ["--version"]) or "").strip().splitlines()[0][:60]
+                except Exception:
+                    pass
                 try:
                     models[key] = {"items": runner.list_connections(), "error": None}
                 except Exception as e:
@@ -543,11 +573,29 @@ class App:
                     state["skills"] = list_skills()
                     state["skills_off"] = app.orch.skills_off()
                     state["apps"] = app.apps_view()
+                    state["cli"] = {"versions": getattr(app, "cli_versions", {}),
+                                    "update": getattr(app, "cli_update", {"state": "idle", "log": []})}
                     try:
                         state["ui_collapsed"] = json.loads(app.store.get_setting("ui_collapsed", "null"))
                     except ValueError:
                         state["ui_collapsed"] = None
                     return self._json(state)
+                if url.path == "/api/img":
+                    p = os.path.realpath(parse_qs(url.query).get("path", [""])[0])
+                    root = os.path.realpath(WORKSPACE)
+                    if os.path.commonpath([p, root]) != root or not os.path.isfile(p) or \
+                            not p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                        return self._json({"error": "not found"}, 404)
+                    with open(p, "rb") as f:
+                        body = f.read()
+                    self.send_response(200)
+                    ctype = {"jpg": "jpeg", "jpeg": "jpeg"}.get(p.rsplit(".", 1)[-1].lower(), p.rsplit(".", 1)[-1].lower())
+                    self.send_header("Content-Type", f"image/{ctype}")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if url.path == "/api/search":
                     return self._json({"results": app.store.search(parse_qs(url.query).get("q", [""])[0])})
                 if url.path.startswith("/api/code/"):
@@ -716,6 +764,19 @@ class App:
                     user = [u for u in app.games.get("user", []) if u != data.get("path")]
                     app.store.set_setting("game_folders_user", json.dumps(user))
                     app._load_game_folders(detect=False)
+                elif path == "/api/reveal":
+                    p = os.path.realpath(str(data.get("path", "")))
+                    root = os.path.realpath(WORKSPACE)
+                    if os.path.commonpath([p, root]) == root and os.path.exists(p):
+                        if sys.platform == "win32":
+                            if data.get("folder"):
+                                subprocess.Popen(["explorer", "/select,", p])
+                            else:
+                                os.startfile(p)
+                        else:
+                            webbrowser.open("file://" + (os.path.dirname(p) if data.get("folder") else p))
+                elif path == "/api/update-cli":
+                    app.update_clis()
                 elif path == "/api/games/install-helpers":
                     app.install_game_helpers()
                 elif path == "/api/apps/blender/recheck":

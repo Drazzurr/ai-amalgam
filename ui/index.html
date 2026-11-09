@@ -243,6 +243,9 @@
   .allowed { display: flex; align-items: center; gap: 6px; font: 12.5px Consolas, monospace; color: #8fe0b5; padding: 3px 0; }
   .allowed span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .allowed button { color: var(--faint); font-size: 15px; padding: 0 4px; } .allowed button:hover { color: #ef8b8b; }
+  .genimg img { max-width: min(520px, 100%); max-height: 520px; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  .genimg .imgcap { font-size: 12px; color: var(--faint); margin-top: 4px; } .genimg .imgcap a { color: var(--quiet); }
+  .clirow { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--quiet); flex-wrap: wrap; }
   .err2 { color: #ef8b8b; font-size: 12.5px; margin: 6px 0 0; }
 
   /* ---------- composer ---------- */
@@ -613,6 +616,10 @@ function addMessage(m, animate) {
     if (m.kind === "command") {
       commandsById[m.id] = m;
       inner = `<div class="cmdreq"><div class="tag">Asked to run</div>${m.text.split("\n").map(c => `<div class="cmd">$ ${esc(c)}</div>`).join("")}</div>`;
+    } else if (m.kind === "image") {
+      const src = `/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(m.text)}`;
+      inner = `<div class="genimg"><a href="#" data-imgopen="${esc(m.text)}"><img src="${src}" alt="Image by ${esc(m.speaker)}" loading="lazy"></a>
+        <div class="imgcap">${esc(m.text.split(/[\\/]/).pop())} · <a href="#" data-imgfolder="${esc(m.text)}">Show in folder</a></div></div>`;
     } else if (m.kind === "output") {
       inner = termHtml(m.text);
       termItems.push(m);
@@ -765,6 +772,12 @@ function renderConnections(conn, models, cs) {
     if (m.key === "claude" && !g.error) rows += `<div class="citem"><span class="d connected"></span><span class="n">Web search</span><span class="badge">READ</span></div>`;
     return `<div class="cgroup"><div class="gname">${av(m.name)}${esc(m.name)}</div>${rows}</div>`;
   }).join("");
+  const cli = (fullState && fullState.cli) || {versions: {}, update: {state: "idle", log: []}};
+  const v = cli.versions || {};
+  $("conns").insertAdjacentHTML("beforeend", `<div class="clirow"><span>Claude Code ${esc(v.claude || "?")} · Codex ${esc(v.gpt || "?")}</span>
+    <button class="btn" id="cliUpdate" ${cli.update.state === "running" ? "disabled" : ""} title="Install the newest Claude Code; fixes for connector problems come out often">${cli.update.state === "running" ? "Updating…" : "Update Claude Code"}</button></div>
+    ${cli.update.log.length ? `<div class="setuplog">${cli.update.log.map(esc).join("\n")}</div>` : ""}`);
+  $("cliUpdate").onclick = () => { api("/api/update-cli", {}); connSig = ""; };
 }
 
 function until(t) {
@@ -984,7 +997,7 @@ async function poll() {
     const cs = s.chat_settings || {doc_link: "", allow_edits: false};
     const usig = JSON.stringify([s.usage, s.models, Math.floor(Date.now() / 60000)]);
     if (usig !== usageSig) { usageSig = usig; renderUsage(s.usage, s.models); }
-    const csig = JSON.stringify([s.connections, s.models, cs.allow_edits]);
+    const csig = JSON.stringify([s.connections, s.models, cs.allow_edits]) + JSON.stringify(s.cli || {});
     if (csig !== connSig) { connSig = csig; renderConnections(s.connections || {}, s.models, cs); }
     if (document.activeElement !== $("docLink") && $("docLink").value !== cs.doc_link) $("docLink").value = cs.doc_link;
     $("allowEdits").checked = cs.allow_edits;
@@ -1052,6 +1065,8 @@ async function copyText(t, btn) {
   if (btn) { const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => btn.textContent = old, 1200); }
 }
 $("log").addEventListener("click", async e => {
+  const im = e.target.closest("[data-imgopen],[data-imgfolder]");
+  if (im) { e.preventDefault(); api("/api/reveal", {path: im.dataset.imgopen || im.dataset.imgfolder, folder: !!im.dataset.imgfolder}); return; }
   const a = e.target.closest("a[data-ext]");
   if (a) { e.preventDefault(); api("/api/open-link", {url: a.getAttribute("href")}); return; }
   const c = e.target.closest(".copy[data-copy]");

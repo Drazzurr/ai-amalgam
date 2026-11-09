@@ -79,6 +79,18 @@ Your normal browser isn't involved.
 - The **Project** card (right panel) holds instructions both models follow in every chat of that project,
   and a default doc link for new chats. Deleting a project keeps its chats (they move to **Chats**).
 
+## Images and Drive troubleshooting
+
+- **GPT makes images.** Ask for art and GPT generates it with ChatGPT's image model (counts
+  against your Plus plan). Images show in the chat, are saved under `workspace\images`, and
+  Claude can look at them to critique. Click an image to open it, or "Show in folder".
+- **Drive copy.** Whenever a model reads the project doc, Amalgam keeps a local copy. If Claude's
+  Drive tools don't load in a turn (a known Claude Code issue in background mode), the models
+  read that copy instead, and a gray note tells you. If the doc is shared by link, Amalgam also
+  refreshes the copy itself. Edits still need the Drive tools.
+- **Update Claude Code** (Connections card) installs the newest Claude Code, which is where
+  fixes for connector problems arrive.
+
 ## Game files
 
 The models can read game files straight from your game folders, with no exporting on your side:

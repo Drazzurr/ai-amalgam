@@ -149,7 +149,13 @@ MAX_RUNS = 3
 
 DOC_LINE = """
 Project document for this chat: {link}
-This is the shared document the group is working on.
+This is the shared document the group is working on.{copy}
+"""
+DOC_COPY = ("\nIf your Google Drive/Docs tools aren't available this turn, don't stop: read the copy of this document "
+            "saved {age} ago at {path} (it may miss very recent edits; say so if that matters). Edits still need the "
+            "Docs tools.")
+IMAGE_LINE = """
+You can create images with your image generation tool (the user's ChatGPT plan covers it). When the user or the group asks for art, generate it rather than only describing it; the app shows your images in the chat and saves them, and the other models can look at them. Say in one line what you made.
 """
 
 EDITS_ON_EDITOR = """
@@ -384,6 +390,7 @@ class Orchestrator:
                 self.pending_commands = None
             self.question_open = False
             self.hint = None
+            self.refresh_doc_copy()
             self.store.add(self.chat_id, "You", "user", text)
             if self.status == "running":
                 # The models will see it on their next turn.
@@ -392,6 +399,31 @@ class Orchestrator:
             self._stop.clear()
             self._thread = threading.Thread(target=self._loop, args=(text,), daemon=True)
             self._thread.start()
+
+    def refresh_doc_copy(self):
+        """If the project doc is shared by link, keep a fresh local copy without needing any connector."""
+        link = (self.chat_settings() or {}).get("doc_link") or ""
+        m = re.search(r"docs\.google\.com/document/d/([A-Za-z0-9_-]{20,})", link)
+        if not m:
+            return
+        from runners import doc_copy, save_doc_copy
+        _p, age = doc_copy(self.workspace, m.group(1))
+        if age is not None and age < 900:
+            return
+
+        def work():
+            import urllib.request
+            try:
+                url = f"https://docs.google.com/document/d/{m.group(1)}/export?format=txt"
+                with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "AI-Amalgam"}),
+                                            timeout=20) as r:
+                    ctype = r.headers.get("Content-Type", "")
+                    body = r.read()
+                if "text/plain" in ctype and len(body) > 100:
+                    save_doc_copy(self.workspace, m.group(1), body.decode("utf-8", "replace"))
+            except Exception:
+                pass   # not shared by link (or offline): the models' own reads keep the copy instead
+        threading.Thread(target=work, daemon=True).start()
 
     def resume(self):
         """Continue (or retry) the discussion without a new message from you."""
@@ -631,6 +663,7 @@ class Orchestrator:
         self.speaker = runner.name
         code_dir = self.code_dir()
         runner.code_dir = code_dir
+        runner.image_dir = os.path.join(self.workspace, "images", f"chat-{self.chat_id}")
         from apps import tool_prefix
         runner.extra_allowed = [tool_prefix(n) for n in self.blender_servers] if self.blender_on else []
         runner.images = [os.path.join(runner.workdir, a["path"]) for a in
@@ -724,6 +757,8 @@ class Orchestrator:
                 keep.append(line)
         body = "\n".join(keep).strip() or body
         self.store.add(self.chat_id, runner.name, "model", body)
+        for img in getattr(runner, "last_images", []) or []:
+            self.store.add(self.chat_id, runner.name, "image", img)
         self._record_change(code_dir, before, runner.name)
         if remembered:
             saved = self.store.add_memory(self.project_id, remembered)
@@ -806,6 +841,11 @@ class Orchestrator:
         if not d:
             return
         drive_like = {k: v for k, v in d["servers"].items() if re.search(r"drive|docs", k, re.I)}
+        doc_on = bool(self.chat_settings().get("doc_link"))
+        if d["servers"] and not drive_like and doc_on and runner.key == "claude":
+            self._note(f"{runner.name}'s Google Drive tools didn't load this turn. This is a known Claude Code issue "
+                       "in background mode; Amalgam gave it the saved copy of the doc if there is one. If it keeps "
+                       "happening, press 'Update Claude Code' in the Connections card.")
         down = {k.replace("claude.ai ", ""): v for k, v in drive_like.items() if str(v).lower() not in ("connected", "ok")}
         if down:
             what = ", ".join(f"{k} ({v})" for k, v in down.items())
@@ -1119,7 +1159,17 @@ class Orchestrator:
                        f"unless the user changes them):\n{mem}") if mem else ""
             doc += PROJECT_LINE.format(name=project["name"], roles=role_txt, memory=mem_txt,
                                        instructions=f"\nProject instructions from the user (always follow these):\n{instr}" if instr else "")
-        doc += DOC_LINE.format(link=link) if link else ""
+        copy = ""
+        if link:
+            from runners import doc_copy
+            m = re.search(r"/d/([A-Za-z0-9_-]{20,})", link)
+            path, age = doc_copy(self.workspace, m.group(1)) if m else (None, None)
+            if path:
+                mins = int(age // 60)
+                copy = DOC_COPY.format(path=path, age=f"{mins} minutes" if mins < 120 else f"{mins // 60} hours")
+        doc += DOC_LINE.format(link=link, copy=copy) if link else ""
+        if key == "gpt":
+            doc += IMAGE_LINE
         if settings.get("allow_edits") and editor:
             doc += EDITS_ON_EDITOR if runner.can_edit_docs else EDITS_ON_OTHER.format(editor=editor)
         elif tools:
@@ -1176,6 +1226,8 @@ class Orchestrator:
                 continue
             if m["kind"] == "question":
                 lines.append(f"[{m['speaker']} asked the user]: {m['text']}")
+            elif m["kind"] == "image":
+                lines.append(f"[{m['speaker']} made an image, saved at {m['text']}; open that file to look at it]")
             elif m["kind"] == "command":
                 lines.append(f"[{m['speaker']} asked to run]: " + "; ".join(m["text"].splitlines()))
             elif m["kind"] == "output":
