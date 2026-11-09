@@ -382,6 +382,12 @@ class Orchestrator:
                     rel = self._file_into_chat(f)
                     self.store.add_attachment(self.chat_id, f["name"], rel, f["size"])
                     names.append(f["name"])
+                    if f["name"].lower().endswith((".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2")):
+                        unpacked, note = self._unpack(rel)
+                        for name, path, size in unpacked:
+                            self.store.add_attachment(self.chat_id, name, path, size)
+                        if note:
+                            names[-1] += f" ({note})"
                 self.pending_files = []
                 text += "\n\n" + "\n".join(f"📎 {n}" for n in names)
             if self.pending_commands:
@@ -391,6 +397,7 @@ class Orchestrator:
             self.question_open = False
             self.hint = None
             self.refresh_doc_copy()
+            self._unpack_old_archives()
             self.store.add(self.chat_id, "You", "user", text)
             if self.status == "running":
                 # The models will see it on their next turn.
@@ -468,6 +475,57 @@ class Orchestrator:
         self.question_open = False
         self.send(text)
         return None
+
+    def _unpack_old_archives(self):
+        """Archives attached before Amalgam could unzip them: unzip them now."""
+        if not self.chat_id:
+            return
+        for att in self.store.attachments(self.chat_id):
+            name = att["name"].lower()
+            if not name.endswith((".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2")):
+                continue
+            src = os.path.join(self.workspace, att["path"])
+            done = os.path.join(os.path.dirname(src), os.path.splitext(os.path.basename(src))[0] + " (unzipped)")
+            if os.path.isfile(src) and not os.path.isdir(done):
+                unpacked, note = self._unpack(att["path"])
+                for n, path, size in unpacked:
+                    self.store.add_attachment(self.chat_id, n, path, size)
+                if note:
+                    self._note(f"{att['name']}: {note}, so the models can open each file.")
+
+    def _unpack(self, rel, max_files=400, max_bytes=2 * 1024 ** 3):
+        """Unzip an attached archive next to it so the models can open each file."""
+        import tarfile, zipfile
+        src = os.path.join(self.workspace, rel)
+        base = os.path.splitext(os.path.basename(src))[0]
+        dest = os.path.join(os.path.dirname(src), base + " (unzipped)")
+        out, total = [], 0
+        try:
+            if zipfile.is_zipfile(src):
+                z = zipfile.ZipFile(src)
+                members = [(i.filename, i.file_size, lambda i=i: z.open(i)) for i in z.infolist() if not i.is_dir()]
+            else:
+                t = tarfile.open(src)
+                members = [(m.name, m.size, lambda m=m: t.extractfile(m)) for m in t.getmembers() if m.isfile()]
+        except Exception as e:
+            return [], f"couldn't unzip: {e}"
+        skipped = 0
+        for name, size, opener in members:
+            parts = [p for p in re.split(r"[\\/]+", name) if p not in ("", ".", "..")]
+            if not parts or parts[0] == "__MACOSX" or parts[-1].startswith("._"):
+                continue
+            if len(out) >= max_files or total + size > max_bytes:
+                skipped += 1
+                continue
+            target = os.path.join(dest, *parts)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with opener() as fsrc, open(target, "wb") as fdst:
+                import shutil
+                shutil.copyfileobj(fsrc, fdst)
+            total += size
+            out.append(("/".join(parts), os.path.relpath(target, self.workspace).replace("\\", "/"), size))
+        note = f"unzipped {len(out)} files" + (f", skipped {skipped} (too many or too big)" if skipped else "")
+        return out, note
 
     def _file_into_chat(self, f):
         """Move an uploaded file from the inbox into this chat's attachments folder."""
@@ -668,7 +726,7 @@ class Orchestrator:
         runner.extra_allowed = [tool_prefix(n) for n in self.blender_servers] if self.blender_on else []
         runner.images = [os.path.join(runner.workdir, a["path"]) for a in
                          (self.store.attachments(self.chat_id) if self.chat_id else [])
-                         if a["path"].lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))][-4:]
+                         if a["path"].lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))][-12:]
         before = self._checkpoint(code_dir, f"before {runner.name}'s turn")
         self.last_question = None
         prompt = self._build_prompt(key, extra)

@@ -106,6 +106,19 @@ def read(path, query="", out_dir="."):
 
     magic = data[:8]
     try:
+        if magic[:4] == b"PK\x03\x04":
+            import io, zipfile
+            from .util import table, write_out
+            z = zipfile.ZipFile(io.BytesIO(data))
+            infos = [i for i in z.infolist() if not i.is_dir()]
+            if action == "extract":
+                want = arg.lower()
+                hits = [i for i in infos if want in i.filename.lower()] if want else infos
+                return head + "Extracted:\n" + "\n".join(write_out(out_dir, i.filename, z.read(i)) for i in hits[:300])
+            text = arg.lower()
+            rows = [[i.filename, size_text(i.file_size)] for i in infos if text in i.filename.lower()]
+            return head + f"Zip archive, {len(infos)} files\n" + table(rows[:500], ["File", "Size"]) + \
+                "\nNext: 'extract <name or text>' (or 'extract' for everything)."
         if magic[:4] == b"TES4":
             from .tes import read_plugin
             return head + read_plugin(data, action, arg, out_dir)
