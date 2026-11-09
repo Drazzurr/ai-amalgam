@@ -1,7 +1,7 @@
 // AI Amalgam's helper for the phone: makes it installable, shows notifications, and shows a
 // "start the Terminal" page instead of Chrome's error when AI Amalgam isn't running.
 // It never stores your chats; every request goes straight to the app.
-const OFFLINE = "amalgam-offline-v2";
+const OFFLINE = "amalgam-offline-v3";
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(OFFLINE).then(c => c.addAll(["/offline.html"])).then(() => self.skipWaiting()));
 });

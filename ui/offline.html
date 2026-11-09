@@ -13,11 +13,30 @@
 </style></head><body><div>
   <svg width="84" height="84" viewBox="0 0 140 140"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>
   <h1>AI Amalgam isn't running</h1>
-  <p>Open the <b>Terminal</b> app. It starts AI Amalgam by itself. Then come back here; this page reconnects on its own.</p>
-  <a class="btn" href="intent://#Intent;package=com.android.virtualization.terminal;end">Open Terminal</a>
-  <div class="wait"><span class="dot"></span>Waiting for AI Amalgam…</div>
+  <p id="say">Opening the <b>Terminal</b> app starts it. Then switch back here; this page reconnects on its own.</p>
+  <a class="btn" id="open" href="#">Start AI Amalgam</a>
+  <div class="wait"><span class="dot"></span>Waiting for AI Amalgam… (tap anywhere to open the Terminal)</div>
 </div>
 <script>
+  // Opens Android's Terminal app (its Linux system starts AI Amalgam). If that app can't be
+  // opened this way, Chrome comes back here with ?noterminal and we explain the manual way.
+  const TERMINAL = "intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;"
+    + "package=com.android.virtualization.terminal;S.browser_fallback_url="
+    + encodeURIComponent(location.origin + "/offline.html?noterminal=1") + ";end";
+  function openTerminal() {
+    try { sessionStorage.setItem("amalgam-opened-terminal", Date.now()); } catch (e) {}
+    location.href = TERMINAL;
+  }
+  if (location.search.includes("noterminal")) {
+    document.getElementById("say").innerHTML = "Open the <b>Terminal</b> app from your home screen. It starts AI Amalgam by itself. Then switch back here.";
+    document.getElementById("open").style.display = "none";
+  } else {
+    document.getElementById("open").onclick = e => { e.preventDefault(); openTerminal(); };
+    document.body.addEventListener("click", e => { if (!e.target.closest("a")) openTerminal(); });
+    // try once by itself (Android may require a tap; then the button / tapping anywhere does it)
+    let last = 0; try { last = +sessionStorage.getItem("amalgam-opened-terminal") || 0; } catch (e) {}
+    if (Date.now() - last > 60000) setTimeout(openTerminal, 400);
+  }
   async function check() {
     try { const r = await fetch("/manifest.webmanifest", {cache: "no-store"}); if (r.ok) { location.replace("/"); return; } } catch (e) {}
     setTimeout(check, 2000);

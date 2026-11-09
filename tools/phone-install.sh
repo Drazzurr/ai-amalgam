@@ -67,59 +67,7 @@ else
 fi
 
 say "5/6  The 'amalgam' command and auto-start"
-cat > "$BIN/amalgam" <<'LAUNCH'
-#!/usr/bin/env bash
-# amalgam            start AI Amalgam (if it isn't running) and show how to open it
-# amalgam stop       stop it
-# amalgam login      sign Claude and Codex in to your plans
-# amalgam repair     reinstall anything that's missing or broken (keeps your chats)
-# amalgam log        show the last lines of the log
-APP="$HOME/ai-amalgam"
-export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
-export DISABLE_AUTOUPDATER=1          # model tools change only when you choose to update them
-unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN OPENAI_API_KEY CODEX_API_KEY   # stay on your subscriptions
-PORT=8765
-running() { curl -s -o /dev/null -m 2 "http://127.0.0.1:$PORT/manifest.webmanifest"; }
-code() { python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/AIAmalgam/phone.json')))['code'])" 2>/dev/null; }
-case "${1:-}" in
-  stop)
-    pkill -f "app.py --phone" && echo "AI Amalgam stopped." || echo "It wasn't running."; exit 0 ;;
-  log)
-    tail -n 40 "$APP/amalgam.log"; exit 0 ;;
-  repair)
-    exec bash <(curl -fsSL https://raw.githubusercontent.com/Drazzurr/ai-amalgam/main/tools/phone-install.sh) ;;
-  login)
-    if [ ! -s "$HOME/.claude/.credentials.json" ]; then
-      echo; echo "== Claude: choose 'Claude account with subscription'. Open the link it shows in Chrome,"
-      echo "   sign in, copy the code, paste it here. When you see Claude's prompt, type /exit"
-      claude
-    else echo "Claude: already signed in."; fi
-    if [ ! -s "$HOME/.codex/auth.json" ]; then
-      echo; echo "== Codex: open the link it shows in Chrome, sign in to ChatGPT, and type the code."
-      codex login --device-auth || codex login
-    else echo "Codex: already signed in."; fi
-    exit 0 ;;
-esac
-quiet=""; [ "${1:-}" = "--quiet" ] && quiet=1
-if ! running; then
-  cd "$APP" || { echo "AI Amalgam isn't installed. Run: amalgam repair"; exit 1; }
-  setsid nohup python3 app.py --phone >/dev/null 2>&1 < /dev/null &
-  for i in $(seq 1 30); do running && break; sleep 0.5; done
-fi
-if running; then
-  if [ -z "$quiet" ] || [ ! -f "$HOME/AIAmalgam/.paired" ]; then
-    echo
-    echo "  AI Amalgam is running.  Open Chrome at:  localhost:$PORT"
-    echo "  Pairing code (first time only):  $(code)"
-    echo "  If the Terminal asks to allow port $PORT, tap Allow."
-    echo
-  else
-    echo "AI Amalgam is running (localhost:$PORT)."
-  fi
-else
-  echo "AI Amalgam didn't start. Type: amalgam log"
-fi
-LAUNCH
+cp "$APP/tools/amalgam.sh" "$BIN/amalgam"
 chmod +x "$BIN/amalgam"
 if ! grep -q "AI Amalgam auto-start" "$HOME/.bashrc" 2>/dev/null; then
   cat >> "$HOME/.bashrc" <<'RC'

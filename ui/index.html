@@ -546,6 +546,7 @@
   <input id="pairCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
   <div class="err" id="pairErr"></div>
 </div></div>
+<div class="reconnect" id="netwarn"></div>
 <div class="reconnect" id="reconnect">Can't reach AI Amalgam. Open the <b>Terminal</b> app for a moment, then come back.</div>
 
 <div class="right">
@@ -1263,6 +1264,11 @@ async function poll() {
     if (s.demo) banners += `<div class="banner">Demo mode: these are stand-in models, not the real Claude and GPT.</div>`;
     if (s.billing_vars.length) banners += `<div class="banner">Found ${esc(s.billing_vars.join(", "))} on this PC. The app ignores them, so you stay on your subscriptions.</div>`;
     $("banners").innerHTML = banners;
+    // phone: the connection dropped (usually after switching Wi-Fi / mobile data)
+    const net = s.network;
+    const netMsg = !net || net.ok ? "" : !net.gave_up ? "Reconnecting to the internet…"
+      : "No internet in AI Amalgam. If your phone is online, close the Terminal app fully and open it again.";
+    if (!lite) { $("netwarn").textContent = netMsg; $("netwarn").classList.toggle("show", !!netMsg); }
     failures = 0;
   } catch (e) {
     if ($("pair").classList.contains("show")) return;     // waiting for the pairing code

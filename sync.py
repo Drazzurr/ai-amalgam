@@ -99,6 +99,7 @@ class Sync:
         self.busy_check = lambda: False   # set by the app: True while the models are working
         self.busy_ids = lambda: (None, None)   # set by the app: (chat id, project id) being worked on
         self.on_imported = None       # set by the app: called with the set of local chat ids changed
+        self.on_network_error = None  # set by the app (phone): check and repair the connection
         self._wake = threading.Event()
         os.makedirs(self.root, exist_ok=True)
         if self.configured():
@@ -217,6 +218,8 @@ class Sync:
             return True
         except SyncError as e:
             self.state.update(state="error", error=str(e))
+            if self.on_network_error and any(w in str(e) for w in ("internet", "reach", "too long")):
+                self.on_network_error()
         except Exception as e:
             import traceback
             traceback.print_exc()

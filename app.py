@@ -317,6 +317,11 @@ class App:
         self.sync.busy_ids = lambda: (self.orch.chat_id, self.orch.project_id)
         self.sync.on_imported = self._after_import
         self._sync_rev_seen = 0
+        self.net = None
+        if self.phone and not args.demo:
+            from netwatch import NetWatch
+            self.net = NetWatch(on_restored=self._network_back)
+            self.sync.on_network_error = self.net.poke
 
     def _after_import(self, chat_ids):
         """Another device's changes just arrived. Refresh what the open chat is waiting on."""
@@ -326,6 +331,27 @@ class App:
                 o.open_chat(o.chat_id)
             except Exception as e:
                 print("Reopen after sync failed:", e)
+
+    def _refresh_launcher(self):
+        """Keep the phone's 'amalgam' command in step with this version (updates come through the app)."""
+        src = os.path.join(APP_DIR, "tools", "amalgam.sh")
+        dest = os.path.expanduser("~/.local/bin/amalgam")
+        try:
+            with open(src, encoding="utf-8") as f:
+                new = f.read()
+            old = open(dest, encoding="utf-8").read() if os.path.isfile(dest) else ""
+            if new != old and os.path.isdir(os.path.dirname(dest)):
+                with open(dest, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(new)
+                os.chmod(dest, 0o755)
+        except OSError as e:
+            print("Couldn't update the amalgam command:", e)
+
+    def _network_back(self):
+        """The phone's connection came back (or was repaired): catch up right away."""
+        self.sync.request()
+        if self.update.get("error"):
+            self.check_update()
 
     def _reload_settings(self):
         o = self.orch
@@ -374,6 +400,8 @@ class App:
             info = self.updater.check()
             self.update = dict(info, state="idle", checked_at=time.time())
             print("Update check:", info)
+            if info.get("error") and self.net:
+                self.net.poke()
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -675,6 +703,7 @@ class App:
                     state["demo"] = app.args.demo
                     state["phone"] = app.phone
                     state["sync"] = app.sync.view()
+                    state["network"] = app.net.view() if app.net else None
                     state["billing_vars"] = app.billing_vars
                     state["connections"] = app.connections_view()
                     app.refresh_usage(force=app.orch.turn_seq != app._last_status)
@@ -1013,6 +1042,8 @@ class App:
         threading.Thread(target=self._notifier, daemon=True).start()
         if not self.args.demo:
             threading.Thread(target=self.sync.loop, args=(self.quit_event,), daemon=True).start()
+            if self.net:
+                threading.Thread(target=self.net.loop, args=(self.quit_event,), daemon=True).start()
             self.sync.request()
         shutil.rmtree(OLD_WINDOW_PROFILE, ignore_errors=True)
         self.refresh_connections()
@@ -1024,6 +1055,7 @@ class App:
             print("Ignoring", ", ".join(self.billing_vars), "so you stay on your subscriptions.")
 
         if self.phone:
+            self._refresh_launcher()
             print(f"Phone mode: open Chrome at http://localhost:{self.port}  - pairing code {self.pair_code}")
         try:
             if self.args.no_open or self.phone:
