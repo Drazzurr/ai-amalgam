@@ -8,6 +8,7 @@ Options:       --demo     stand-in models, to try the app without using your pla
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -664,8 +665,7 @@ class App:
                         app._reload_settings()
                     after = int(q.get("after", ["0"])[0] or 0)
                     state = app.orch.state()
-                    msgs = app.store.messages(state["chat_id"]) if state["chat_id"] else []
-                    state["messages"] = [m for m in msgs if m["id"] > after]
+                    state["messages"] = app.store.messages(state["chat_id"], after) if state["chat_id"] else []
                     state["sync_rev"] = app.sync.rev
                     if q.get("lite", ["0"])[0] == "1":   # quick refresh while models talk
                         return self._json(state)
@@ -691,6 +691,12 @@ class App:
                         state["ui_collapsed"] = json.loads(app.store.get_setting("ui_collapsed", "null"))
                     except ValueError:
                         state["ui_collapsed"] = None
+                    # nothing changed since the page's last copy: say so in a few bytes (saves the phone's battery)
+                    body = json.dumps(state, sort_keys=True)
+                    tag = hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
+                    if q.get("tag", [""])[0] == tag and not state["messages"]:
+                        return self._json({"same": True, "tag": tag})
+                    state["tag"] = tag
                     return self._json(state)
                 if url.path == "/api/img":
                     raw = parse_qs(url.query).get("path", [""])[0]

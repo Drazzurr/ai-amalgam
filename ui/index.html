@@ -453,6 +453,13 @@
     .tabbar button .badge.show { display: block; }
     .tabbar button.disabled { opacity: .35; }
     .quit { display: none; }
+    #menuBtn { width: 44px !important; height: 44px !important; }
+    .menu button { padding: 13px 16px; font-size: 15px; }
+    .iconbtn { width: 36px; height: 36px; font-size: 20px; }
+    .msg .tools button { min-height: 34px; }
+    body.typing .tabbar { display: none !important; }
+    body.typing main { bottom: 0; }
+    body.typing .right { bottom: 0; }
   }
 
 </style>
@@ -490,7 +497,7 @@
     <select id="moveSel" class="movesel" title="Move this chat to a project" style="display:none"></select>
     <div class="faces" id="faces"></div>
     <div class="menuwrap"><button class="iconbtn" id="menuBtn" title="More" style="width:30px;height:30px;font-size:18px">⋯</button>
-      <div class="menu" id="menu"><button id="exportMd">Export chat as Markdown file</button><button id="copyChat">Copy whole chat</button></div></div>
+      <div class="menu" id="menu"><button id="exportMd">Export chat as Markdown file</button><button id="copyChat">Copy whole chat</button><button id="shareChat" style="display:none">Share chat…</button></div></div>
   </header>
   <div id="log"></div>
   <div id="codeView">
@@ -1162,11 +1169,19 @@ function renderUpdate(u) {
 }
 let restartingNow = false;
 
-let modelsSig = "", connSig = "", usageSig = "", lastFull = 0, fullState = {}, currentProject = null;
+let modelsSig = "", connSig = "", usageSig = "", lastFull = 0, fullState = {}, currentProject = null, lastRendered = 0;
 async function poll() {
   try {
     const lite = Date.now() - lastFull < 2500 && lastStatus === "running";
-    const got = await api(`/api/state?after=${lastId}&focused=${document.hasFocus() ? 1 : 0}${lite ? "&lite=1" : ""}`);
+    // ask "anything new?" with the last copy's tag; a full redraw at least every 30 s keeps times fresh
+    const tag = !lite && fullState.tag && Date.now() - lastRendered < 30000 ? `&tag=${fullState.tag}` : "";
+    const got = await api(`/api/state?after=${lastId}&focused=${document.hasFocus() ? 1 : 0}${lite ? "&lite=1" : ""}${tag}`);
+    if (got.same) {
+      failures = 0; lastFull = Date.now();
+      setTimeout(poll, lastStatus === "running" ? 200 : (document.hidden && PHONE ? 3000 : 800));
+      return;
+    }
+    lastRendered = Date.now();
     if (!lite) { lastFull = Date.now(); fullState = got; }
     const s = lite ? {...fullState, ...got} : got;
     if (!lite && s.phone !== undefined && s.phone !== PHONE) { PHONE = s.phone; store("amalgam_phone", PHONE ? "1" : "0"); }
@@ -1231,9 +1246,10 @@ async function poll() {
       if (document.activeElement !== $("checkQ")) $("checkQ").checked = s.check_questions !== false;
       if (!collapsedLoaded && s.ui_collapsed) { collapsed = new Set(s.ui_collapsed); collapsedLoaded = true; applyCollapsed(); }
     }
-    $("input").placeholder = s.code && s.code.pending_command && s.status === "waiting" ? "Approve or deny above, or type a reply to skip the commands…"
-      : s.status === "waiting" ? "Answer the question to continue…"
-      : s.status === "running" ? "Add something to the discussion…" : "Message Claude and GPT…";
+    const narrow = window.innerWidth <= 760;
+    $("input").placeholder = s.code && s.code.pending_command && s.status === "waiting" ? (narrow ? "Or type a reply…" : "Approve or deny above, or type a reply to skip the commands…")
+      : s.status === "waiting" ? (narrow ? "Your answer…" : "Answer the question to continue…")
+      : s.status === "running" ? (narrow ? "Add to the discussion…" : "Add something to the discussion…") : "Message Claude and GPT…";
     lastStatus = s.status;
 
     renderSidebar(s);
@@ -1366,7 +1382,16 @@ $("pairCode").addEventListener("input", async () => {
   } catch (e) { $("pairErr").textContent = "Can't reach AI Amalgam. Is the Terminal app open?"; }
 });
 function closeDrawer() { document.body.classList.remove("drawer"); }
-$("drawerBtn").onclick = () => document.body.classList.add("drawer");
+function openDrawer() { document.body.classList.add("drawer"); pushBack(); }
+// The phone's Back gesture closes the menu or returns to Chat before it would leave the app
+function pushBack() { if (PHONE || TOUCH_UI()) try { history.pushState({amalgam: 1}, ""); } catch (e) {} }
+function TOUCH_UI() { return window.matchMedia("(max-width: 760px)").matches; }
+window.addEventListener("popstate", () => {
+  if (document.body.classList.contains("drawer")) closeDrawer();
+  else if (tab !== "chat") setTab("chat");
+  else if (document.body.classList.contains("typing")) $("input").blur();
+});
+$("drawerBtn").onclick = openDrawer;
 $("scrim").onclick = closeDrawer;
 let tab = "chat", lastCodeOk = false;
 function setTab(t) {
@@ -1379,6 +1404,7 @@ function setTab(t) {
   if (t === "info") { $("infoBadge").classList.remove("show"); document.querySelector(".right").scrollTop = 0; }
 }
 $("tabbar").querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
+  if (b.dataset.tab !== "chat" && tab === "chat") pushBack();
   if (b.dataset.tab === "code" && !lastCodeOk) {
     setTab("info"); const pc = $("projCard");
     if (pc.style.display !== "none") pc.scrollIntoView({behavior: "smooth"});
@@ -1393,7 +1419,7 @@ document.addEventListener("touchstart", e => { touchX = e.touches[0].clientX; to
 document.addEventListener("touchend", e => {
   if (touchX === null) return;
   const dx = e.changedTouches[0].clientX - touchX, dy = Math.abs(e.changedTouches[0].clientY - touchY);
-  if (dy < 60 && touchX < 28 && dx > 60) document.body.classList.add("drawer");
+  if (dy < 60 && touchX < 28 && dx > 60 && !document.body.classList.contains("drawer")) openDrawer();
   if (dy < 60 && dx < -60 && document.body.classList.contains("drawer")) closeDrawer();
   touchX = null;
 }, {passive: true});
@@ -1505,6 +1531,13 @@ $("exportMd").onclick = async () => {
   document.body.appendChild(a); a.click(); a.remove();
 };
 $("copyChat").onclick = async () => copyText((await chatMarkdown()).md);
+if (navigator.share) {
+  $("shareChat").style.display = "";
+  $("shareChat").onclick = async () => {
+    const {title, md} = await chatMarkdown();
+    try { await navigator.share({title, text: md}); } catch (e) {}
+  };
+}
 
 // ---------- collapsible cards ----------
 let collapsed = new Set(["connections", "discussion", "tips", "skills"]), collapsedLoaded = false;
@@ -1799,7 +1832,13 @@ async function send() {
   await api("/api/send", {text});
 }
 $("input").addEventListener("input", grow);
-$("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+const TOUCH = window.matchMedia("(pointer: coarse)").matches;
+$("input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !(TOUCH && !e.ctrlKey)) { e.preventDefault(); send(); }   // phone: Enter = new line
+});
+// phone: while typing, give the keyboard the tab bar's space
+$("input").addEventListener("focus", () => document.body.classList.add("typing"));
+$("input").addEventListener("blur", () => setTimeout(() => document.body.classList.remove("typing"), 120));
 $("sendBtn").onclick = send;
 $("stopBtn").onclick = () => api("/api/stop", {});
 $("newBtn").onclick = () => api("/api/new", {});

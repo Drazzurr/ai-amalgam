@@ -157,11 +157,11 @@ class Store:
             self._db.commit()
             return {"id": cur.lastrowid, "speaker": speaker, "kind": kind, "text": text, "created": now}
 
-    def messages(self, chat_id):
+    def messages(self, chat_id, after=0):
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, speaker, kind, text, created FROM messages WHERE chat_id = ? ORDER BY id",
-                (chat_id,),
+                "SELECT id, speaker, kind, text, created FROM messages WHERE chat_id = ? AND id > ? ORDER BY id",
+                (chat_id, after),
             ).fetchall()
         return [dict(zip(("id", "speaker", "kind", "text", "created"), r)) for r in rows]
 
