@@ -9,6 +9,8 @@ repository under %LOCALAPPDATA%\\AIAmalgam\\checkpoints, so your project's own
 import os
 import re
 import shutil
+
+from gitfind import find_git
 import subprocess
 import sys
 import threading
@@ -150,7 +152,7 @@ class Checkpoints:
 
     def __init__(self, data_dir):
         self.root = os.path.join(data_dir, "checkpoints")
-        self.git = shutil.which("git")
+        self.git = find_git()
         self._lock = threading.Lock()
 
     @property

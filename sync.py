@@ -26,6 +26,8 @@ import json
 import os
 import re
 import shutil
+
+from gitfind import find_git
 import subprocess
 import sys
 import threading
@@ -89,7 +91,7 @@ class Sync:
         self.key_file = os.path.join(self.root, "key")
         self.workspace = workspace
         self.device = device_name
-        self.git = shutil.which("git")
+        self.git = find_git()
         self._lock = threading.Lock()
         self.state = {"state": "off", "last_ok": 0, "error": "", "busy": False, "changed": 0,
                       "conflicts": [], "notes": [], "who": ""}
@@ -228,8 +230,11 @@ class Sync:
 
     def _git_cmd(self, *args, check=True, timeout=180):
         if not self.git:
+            self.git = find_git()       # installed since the app started?
+        if not self.git:
             raise SyncError("Git isn't installed on this device, and sync needs it. "
-                            "On Windows: winget install Git.Git. On the phone: run 'amalgam repair'.")
+                            "On the PC, open PowerShell and run: winget install Git.Git  "
+                            "(then press Sync now). On the phone: run 'amalgam repair'.")
         auth = base64.b64encode(f"x-access-token:{self._key()}".encode()).decode()
         env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_AUTHOR_NAME="AI Amalgam",
                    GIT_AUTHOR_EMAIL="amalgam@localhost", GIT_COMMITTER_NAME="AI Amalgam",
