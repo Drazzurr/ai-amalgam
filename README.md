@@ -209,6 +209,38 @@ If one model hits its plan limit, the discussion carries on with the other. The 
   to background tools, so **Details** opens your Claude usage page for that.
 - Both show how many replies each model has given in the app (last 5 hours / 7 days).
 
+## Sync between your PC and phone
+Your chats, projects (instructions, roles, memory, settings) and code folders stay the same on every
+device, through a **private** GitHub repository only you can see (for example `Drazzurr/amalgam-sync`).
+Set up once per device under **Sync** (right panel on the PC, **Info** on the phone):
+1. **Make my sync space** opens GitHub's new-repository page, filled in (private). Tap Create. (Once only.)
+2. **Get my key** opens GitHub's key page, filled in. Choose **Only select repositories → amalgam-sync**,
+   then Generate and Copy. (You can use the same key on both devices.)
+3. Paste the key, name the device (PC / Phone) and press **Connect**.
+
+It syncs when the app starts, when you come back to it, after each discussion, every couple of minutes,
+and when you close it. Nothing is ever lost: messages from both devices are kept in time order, deleting
+on one device deletes on the other, the newest change to a title or setting wins, project memory keeps
+lines from both, and a code file edited on **both** devices keeps both versions (yours is saved as
+"name (conflict from PC …).ext"). Files over 25 MB and code folders over 300 MB stay on their own device.
+The key stays on each device (in `AIAmalgam\sync\key`), never in the repository.
+
+## On your phone (Google Pixel)
+AI Amalgam runs fully on the phone, free, using the Pixel's built-in **Linux Terminal**:
+1. Settings → About phone → tap **Build number** 7 times. Then Settings → System → Developer options →
+   **Linux development environment** → on. Open the **Terminal** app and let it download (Wi-Fi, ~570 MB).
+2. In the Terminal, paste this one line and press Enter:
+   `bash <(curl -fsSL https://raw.githubusercontent.com/Drazzurr/ai-amalgam/main/tools/phone-install.sh)`
+   It installs everything and walks you through signing Claude and Codex in to your plans (once).
+3. Open Chrome at `localhost:8765`, type the 6-digit code from the Terminal, then menu ⋮ → **Add to Home
+   screen**. If the Terminal asks to allow port 8765, tap Allow.
+4. In the app: **Info → Sync** → paste your key → Connect.
+
+Every day: opening the Terminal app starts AI Amalgam; then use the home-screen icon. In the Terminal,
+`amalgam` shows the link and code, `amalgam login` signs in again, `amalgam repair` fixes anything broken
+(your chats are kept), `amalgam stop` stops it. Model tools are kept at versions known to work; they only
+change when you choose to update.
+
 ## Updates
 At the bottom left of the sidebar: **v1.0.0 · Check for updates**. The app also checks once each time it
 starts. When there's a new version, click **Update available** and it downloads it from

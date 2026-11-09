@@ -2,6 +2,7 @@
 
 Normal start:  double-click the "AI Amalgam" desktop shortcut (no console window).
 Options:       --demo     stand-in models, to try the app without using your plans
+               --phone    phone mode (Pixel Linux Terminal): no window, fixed port 8765, pairing code
                --browser  open in your normal web browser instead of an app window
                --console  keep printing to the console (for troubleshooting)
 """
@@ -215,6 +216,37 @@ def existing_instance():
     return None
 
 
+PHONE_PORT = 8765
+PHONE_FILE = os.path.join(DATA_DIR, "phone.json")
+STATIC = {   # served without the key, so the phone can install the app and pair
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+}
+
+
+def phone_identity():
+    """The phone keeps the same key and 6-digit pairing code across restarts, so the home-screen
+    icon keeps working. Delete phone.json to make new ones (then pair again)."""
+    info = {}
+    try:
+        with open(PHONE_FILE, encoding="utf-8") as f:
+            info = json.load(f)
+    except (OSError, ValueError):
+        pass
+    if not info.get("token") or not re.fullmatch(r"\d{6}", str(info.get("code", ""))):
+        info = {"token": secrets.token_urlsafe(24), "code": f"{secrets.randbelow(10**6):06d}"}
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(PHONE_FILE, "w", encoding="utf-8") as f:
+            json.dump(info, f)
+        try:
+            os.chmod(PHONE_FILE, 0o600)
+        except OSError:
+            pass
+    return info
+
+
 # ---------- the app ----------
 
 class App:
@@ -238,7 +270,15 @@ class App:
         self.store = Store(DB_FILE)
         from codework import Checkpoints
         self.orch = Orchestrator(self.store, make_runners(WORKSPACE, demo=args.demo), Checkpoints(DATA_DIR))
-        self.token = secrets.token_urlsafe(24)
+        self.phone = bool(getattr(args, "phone", False))
+        if self.phone:
+            ident = phone_identity()
+            self.token, self.pair_code = ident["token"], ident["code"]
+            if not args.port:
+                args.port = PHONE_PORT
+        else:
+            self.token, self.pair_code = secrets.token_urlsafe(24), None
+        self._pair_fails = []
         self.billing_vars = billing_vars_present()
         self.quit_event = threading.Event()
         self.started = time.time()
@@ -261,15 +301,50 @@ class App:
         self.orch.blender_path = apps.find_blender()[0]
         self.games = {"detected": {}, "state": "idle", "log": []}
         self._load_game_folders()
-        self.server = ThreadingHTTPServer(("127.0.0.1", args.port), self._handler())
+        # The phone's Terminal forwards the port from its Linux system to Chrome, so listen there too.
+        # Every request still needs the key (or the pairing code to get it).
+        host = "0.0.0.0" if self.phone else "127.0.0.1"
+        ThreadingHTTPServer.allow_reuse_address = True
+        self.server = ThreadingHTTPServer((host, args.port), self._handler())
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/#t={self.token}"
+        from sync import Sync
+        device = self.store.get_setting("device_name") or ("Phone" if self.phone else "PC")
+        self.sync = Sync(self.store, DATA_DIR, WORKSPACE, device)
+        self.sync.busy_check = lambda: self.orch.status == "running"
+        self.sync.busy_ids = lambda: (self.orch.chat_id, self.orch.project_id)
+        self.sync.on_imported = self._after_import
+        self._sync_rev_seen = 0
+
+    def _after_import(self, chat_ids):
+        """Another device's changes just arrived. Refresh what the open chat is waiting on."""
+        o = self.orch
+        if o.chat_id in chat_ids and o.status != "running":
+            try:
+                o.open_chat(o.chat_id)
+            except Exception as e:
+                print("Reopen after sync failed:", e)
+
+    def _reload_settings(self):
+        o = self.orch
+        try:
+            o.max_rounds = max(1, min(20, int(self.store.get_setting("max_rounds", 4))))
+        except (TypeError, ValueError):
+            pass
+        o.check_questions = self.store.get_setting("check_questions", "1") == "1"
+        if o.status != "running":
+            o._apply_speeds()
 
     def _notifier(self):
         """Pop up a Windows notification when the models need you or finish, if you're not looking."""
         prev = self.orch.status
         while not self.quit_event.wait(1):
             st = self.orch.status
+            if prev == "running" and st != "running":
+                self.sync.request()
+            if self.sync.rev != self._sync_rev_seen:
+                self._sync_rev_seen = self.sync.rev
+                self._reload_settings()
             if prev == "running" and st != "running" and self.store.get_setting("notify", "1") == "1" \
                     and time.time() - self.focused_at > 3:
                 o = self.orch
@@ -517,6 +592,24 @@ class App:
                 sent = self.headers.get("X-Token") or parse_qs(url.query).get("t", [""])[0]
                 return secrets.compare_digest(sent, app.token)
 
+            def _pair(self, url):
+                """Phone only: swap the 6-digit code shown in the Terminal for the app's key."""
+                if not app.phone:
+                    return self._json({"error": "not found"}, 404)
+                now = time.time()
+                app._pair_fails = [t for t in app._pair_fails if now - t < 300]
+                if len(app._pair_fails) >= 8:
+                    return self._json({"error": "Too many wrong codes. Wait 5 minutes and try again."}, 429)
+                code = re.sub(r"\D", "", parse_qs(url.query).get("code", [""])[0])
+                if code and secrets.compare_digest(code, app.pair_code):
+                    try:
+                        open(os.path.join(DATA_DIR, ".paired"), "w").close()
+                    except OSError:
+                        pass
+                    return self._json({"ok": True, "token": app.token})
+                app._pair_fails.append(now)
+                return self._json({"error": "That code isn't right. Type 'amalgam' in the Terminal to see it."}, 403)
+
             def _upload(self, url, length):
                 """Save a file you attach; it goes with your next message."""
                 if length > MAX_UPLOAD:
@@ -544,6 +637,14 @@ class App:
                     return self._file(UI_FILE, "text/html; charset=utf-8")
                 if url.path == "/favicon.ico" and os.path.isfile(ICON_FILE):
                     return self._file(ICON_FILE, "image/x-icon")
+                if url.path in STATIC:
+                    name, ctype = STATIC[url.path]
+                    path = os.path.join(APP_DIR, "ui", name)
+                    if os.path.isfile(path):
+                        return self._file(path, ctype)
+                    return self._json({"error": "not found"}, 404)
+                if url.path == "/api/pair":
+                    return self._pair(url)
                 if not self._token_ok(url):
                     return self._json({"error": "forbidden"}, 403)
                 if url.path == "/api/ping":
@@ -553,15 +654,21 @@ class App:
                     q = parse_qs(url.query)
                     if q.get("focused", ["0"])[0] == "1":
                         app.focused_at = time.time()
+                    if q.get("lite", ["0"])[0] != "1" and app.sync.rev != app._sync_rev_seen:
+                        app._sync_rev_seen = app.sync.rev
+                        app._reload_settings()
                     after = int(q.get("after", ["0"])[0] or 0)
                     state = app.orch.state()
                     msgs = app.store.messages(state["chat_id"]) if state["chat_id"] else []
                     state["messages"] = [m for m in msgs if m["id"] > after]
+                    state["sync_rev"] = app.sync.rev
                     if q.get("lite", ["0"])[0] == "1":   # quick refresh while models talk
                         return self._json(state)
                     state["chats"] = app.store.chats()
                     state["projects"] = app.store.projects()
                     state["demo"] = app.args.demo
+                    state["phone"] = app.phone
+                    state["sync"] = app.sync.view()
                     state["billing_vars"] = app.billing_vars
                     state["connections"] = app.connections_view()
                     app.refresh_usage(force=app.orch.turn_seq != app._last_status)
@@ -822,6 +929,26 @@ class App:
                     link = data.get("doc_link")
                     app.orch.set_chat_settings(str(link) if link is not None else None,
                                                data.get("allow_edits"))
+                elif path == "/api/sync/connect":
+                    from sync import SyncError
+                    try:
+                        full = app.sync.connect(str(data.get("key", "")), str(data.get("repo", "") or "amalgam-sync"))
+                    except SyncError as e:
+                        return self._json({"error": str(e)}, 400)
+                    name = str(data.get("device", "")).strip()[:30]
+                    if name:
+                        app.store.set_setting("device_name", name)
+                        app.sync.device = name
+                    return self._json({"ok": True, "repo": full})
+                elif path == "/api/sync/now":
+                    app.sync.request()
+                elif path == "/api/sync/disconnect":
+                    app.sync.disconnect()
+                elif path == "/api/sync/device":
+                    name = str(data.get("name", "")).strip()[:30]
+                    if name:
+                        app.store.set_setting("device_name", name)
+                        app.sync.device = name
                 elif path == "/api/quit":
                     self._json({"ok": True})
                     app.quit()
@@ -836,6 +963,8 @@ class App:
 
     def _watchdog(self, track_window):
         """Close the app when its window is gone (closed, or not checking in any more)."""
+        if self.phone:
+            return    # on the phone the app keeps running; Chrome tabs come and go
         opened_at = time.time()
         busy_until, told_at = 0, 0
         while not self.quit_event.wait(2):
@@ -870,6 +999,9 @@ class App:
             json.dump({"port": self.port, "token": self.token, "pid": os.getpid()}, f)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         threading.Thread(target=self._notifier, daemon=True).start()
+        if not self.args.demo:
+            threading.Thread(target=self.sync.loop, args=(self.quit_event,), daemon=True).start()
+            self.sync.request()
         shutil.rmtree(OLD_WINDOW_PROFILE, ignore_errors=True)
         self.refresh_connections()
         if not self.args.demo:
@@ -879,8 +1011,10 @@ class App:
         if self.billing_vars:
             print("Ignoring", ", ".join(self.billing_vars), "so you stay on your subscriptions.")
 
+        if self.phone:
+            print(f"Phone mode: open Chrome at http://localhost:{self.port}  - pairing code {self.pair_code}")
         try:
-            if self.args.no_open:
+            if self.args.no_open or self.phone:
                 self.quit_event.wait()
                 return
             if not self.args.browser:
@@ -909,6 +1043,11 @@ class App:
             self.orch.stop()
         except Exception:
             pass
+        if not self.args.demo and self.sync.configured():
+            print("Syncing before closing...")
+            done = threading.Event()
+            threading.Thread(target=lambda: (self.sync.sync_once(), done.set()), daemon=True).start()
+            done.wait(45)
         if self.window and self.window.poll() is None:
             try:
                 self.window.terminate()
@@ -930,10 +1069,11 @@ def main():
     parser.add_argument("--console", action="store_true", help="print to the console")
     parser.add_argument("--port", type=int, default=0, help="local port (default: any free port)")
     parser.add_argument("--no-open", action="store_true", help="don't open any window")
+    parser.add_argument("--phone", action="store_true", help="phone mode (Linux Terminal on a Pixel)")
     args = parser.parse_args()
     setup_logging(args.console)
 
-    if not args.demo and not args.no_open:
+    if not args.demo and not args.no_open and not args.phone:
         url = existing_instance()
         if url:
             print("Already running; opening another window.")

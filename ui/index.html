@@ -2,9 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#141517">
 <title>AI Amalgam</title>
 <link rel="icon" href="/favicon.ico">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <style>
   :root {
     --bg: #1a1b1e; --side: #141517; --raised: #24262a; --raised2: #2c2e33; --line: #2e3035;
@@ -357,7 +360,93 @@
   .tips p { margin: 0 0 8px; font-size: 13px; color: var(--quiet); }
   .banner { border: 1px solid rgba(240,178,50,.45); background: rgba(240,178,50,.08); color: #f3d79a; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
 
-  @media (max-width: 1100px) { body { grid-template-columns: 220px 1fr; } .right { display: none; } }
+  @media (max-width: 1100px) and (min-width: 761px) { body { grid-template-columns: 220px 1fr; } .right { display: none; } }
+  /* ---------- sync card + pairing ---------- */
+  .syncst { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+  .syncst .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
+  .syncst .dot.ok { background: var(--gpt); } .syncst .dot.busy { background: var(--you); animation: pulse 1s infinite; }
+  .syncst .dot.err { background: #f08a84; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .syncerr { color: #f08a84; font-size: 12.5px; margin: 8px 0 0; }
+  .syncsteps { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--quiet); }
+  .syncsteps li { margin-bottom: 8px; }
+  .syncsteps .btn { margin-top: 4px; }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .pair { display: none; position: fixed; inset: 0; z-index: 50; background: var(--bg); place-items: center; text-align: center; padding: 24px; }
+  .pair.show { display: grid; }
+  .pair h2 { margin: 16px 0 6px; font-size: 22px; } .pair p { color: var(--quiet); margin: 0 0 18px; font-size: 14.5px; }
+  .pair input { font: 600 30px/1 ui-monospace, monospace; letter-spacing: .35em; text-align: center; width: 240px; padding: 12px;
+                background: var(--raised); color: var(--ink); border: 1px solid #44474e; border-radius: 14px; outline: 0; }
+  .pair .err { color: #f08a84; min-height: 20px; margin-top: 10px; font-size: 14px; }
+  .reconnect { display: none; position: fixed; left: 50%; transform: translateX(-50%); top: calc(10px + env(safe-area-inset-top));
+               z-index: 40; background: #3a2a12; border: 1px solid rgba(240,178,50,.6); color: #f3d79a; border-radius: 12px;
+               padding: 9px 14px; font-size: 13.5px; box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: calc(100% - 24px); }
+  .reconnect.show { display: block; }
+
+  /* ---------- phone layout ---------- */
+  .mob { display: none; } .scrim { display: none; }
+  @media (max-width: 760px) {
+    body { display: block; font-size: 16px; }
+    .mob { display: revert; }
+    /* slide-out menu */
+    aside { position: fixed; z-index: 33; top: 0; bottom: 0; left: 0; width: min(86vw, 330px); transform: translateX(-102%);
+            transition: transform .22s ease; padding-top: calc(14px + env(safe-area-inset-top)); padding-bottom: calc(14px + env(safe-area-inset-bottom));
+            box-shadow: 8px 0 30px rgba(0,0,0,.45); }
+    body.drawer aside { transform: none; }
+    .scrim { display: none; position: fixed; inset: 0; z-index: 32; background: rgba(0,0,0,.5); }
+    body.drawer .scrim { display: block; }
+    .chatlist #projects button, .chatlist #chats button { padding: 11px 10px; font-size: 15px; }
+    .crow .acts { display: flex; position: static; transform: none; background: none; margin-left: 4px; }
+    .crow { display: flex; align-items: center; } .crow > button { flex: 1; min-width: 0; }
+    .crow .acts span { width: 34px; height: 34px; font-size: 15px; }
+    /* the chat fills the screen; tabs along the bottom */
+    main { position: fixed; inset: 0; bottom: calc(58px + env(safe-area-inset-bottom)); padding-top: env(safe-area-inset-top); }
+    header { height: 52px; padding: 0 8px 0 4px; gap: 6px; }
+    header .title { font-size: 16px; flex: 1; min-width: 0; }
+    header #viewTabs, header #moveSel { display: none !important; }
+    .menubtn { width: 44px; height: 44px; display: grid !important; place-items: center; border-radius: 10px; color: var(--ink); flex: none; }
+    .faces { margin-left: 0; }
+    .msg { grid-template-columns: 30px 1fr; gap: 9px; padding: 8px 12px; }
+    .msg .av { width: 30px; height: 30px; font-size: 13px; }
+    .msg .meta .tools { opacity: 1; }
+    .msg .tools button { padding: 4px 9px; font-size: 13px; }
+    .composer { padding: 6px 8px 8px; }
+    .box { border-radius: 22px; }
+    #input { font-size: 16px; }
+    .round { width: 40px; height: 40px; }
+    .hint { display: none; }
+    .approvebar { margin: 0 0 8px; } .approvebar .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .approvebar .row .btn { padding: 11px 8px; font-size: 15px; } .approvebar .row .go { grid-column: 1 / -1; }
+    .approvebar .row small { grid-column: 1 / -1; text-align: center; }
+    .choices button, .choice, .ask button { min-height: 42px; }
+    /* Info = the right-hand cards, full screen */
+    .right { display: none; position: fixed; z-index: 5; inset: 0; bottom: calc(58px + env(safe-area-inset-bottom));
+             padding: calc(12px + env(safe-area-inset-top)) 10px 16px; }
+    body.tab-info .right { display: block; }
+    body.tab-info main { visibility: hidden; }
+    .right .card { padding: 14px; } .right .field { font-size: 16px; }
+    .infohead { display: flex !important; align-items: center; gap: 10px; padding: 2px 4px 12px; font-weight: 650; font-size: 18px; }
+    /* code: file list on top of the viewer */
+    .ctabs { padding: 6px 8px 0; overflow-x: auto; } .ctabs .path { display: none; }
+    #ct-files.on { flex-direction: column; }
+    .filelist { width: auto; max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--line); }
+    #ct-files.viewing .filelist { display: none; }
+    #ct-files.viewing .vbar .backfiles { display: inline-block !important; }
+    .code { font-size: 12.5px; }
+    /* bottom tab bar */
+    .tabbar { display: grid !important; grid-template-columns: repeat(3, 1fr); position: fixed; z-index: 31; left: 0; right: 0; bottom: 0;
+              height: calc(58px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+              background: var(--side); border-top: 1px solid var(--line); }
+    .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--faint);
+                     font-size: 11.5px; font-weight: 600; position: relative; }
+    .tabbar button svg { width: 22px; height: 22px; }
+    .tabbar button.on { color: var(--ink); }
+    .tabbar button .badge { position: absolute; top: 7px; left: calc(50% + 7px); width: 9px; height: 9px; border-radius: 50%; background: var(--ask); display: none; }
+    .tabbar button .badge.show { display: block; }
+    .tabbar button.disabled { opacity: .35; }
+    .quit { display: none; }
+  }
+
 </style>
 </head>
 <body>
@@ -386,6 +475,8 @@
 
 <main>
   <header>
+    <button class="menubtn mob" id="drawerBtn" title="Chats and projects" aria-label="Chats and projects">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div class="title" id="title">New chat</div>
     <div class="tabs" id="viewTabs"><button class="on" data-view="chat">Chat</button><button data-view="code">Code</button></div>
     <select id="moveSel" class="movesel" title="Move this chat to a project" style="display:none"></select>
@@ -399,7 +490,7 @@
       <span class="sp"></span><span class="path" id="codePath"></span></div>
     <div class="cpane on" id="ct-files">
       <div class="filelist"><input class="field" id="fileFilter" placeholder="Filter files…" spellcheck="false"><div class="items" id="fileItems"></div></div>
-      <div class="viewer"><div class="vbar"><span class="sp" id="vName">Pick a file</span>
+      <div class="viewer"><div class="vbar"><button class="btn backfiles" id="backFiles" style="display:none">‹ Files</button><span class="sp" id="vName">Pick a file</span>
         <button class="btn" id="runBtn" style="display:none">▶ Run</button><button class="btn" id="refreshFiles">Refresh</button></div>
         <div class="code cempty" id="vBody">Pick a file on the left to read it.</div></div>
     </div>
@@ -427,8 +518,28 @@
   </div>
 </main>
 
+<div class="scrim" id="scrim"></div>
+<nav class="tabbar mob" id="tabbar" style="display:none">
+  <button class="on" data-tab="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Chat<span class="badge" id="chatBadge"></span></button>
+  <button data-tab="code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>Code</button>
+  <button data-tab="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>Info<span class="badge" id="infoBadge"></span></button>
+</nav>
+<div class="pair" id="pair"><div>
+  <svg class="logo big" viewBox="0 0 140 140" aria-hidden="true"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>
+  <h2>Connect this phone</h2>
+  <p>Type the 6-digit code shown in the Terminal app.<br>(Type <b>amalgam</b> there if you can't see it.)</p>
+  <input id="pairCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+  <div class="err" id="pairErr"></div>
+</div></div>
+<div class="reconnect" id="reconnect">Can't reach AI Amalgam. Open the <b>Terminal</b> app for a moment, then come back.</div>
+
 <div class="right">
+  <div class="infohead mob" style="display:none">Info &amp; settings</div>
   <div id="banners"></div>
+  <div class="card" data-card="sync" id="syncCard">
+    <div class="cardhead"><h3>Sync</h3><button class="mini" id="syncNow" style="display:none">Sync now</button></div>
+    <div id="syncBody"><p class="help" style="margin:0">Checking…</p></div>
+  </div>
   <div class="card" data-card="chat">
     <h3>In this chat</h3>
     <div id="models"></div>
@@ -503,7 +614,12 @@
 </div>
 
 <script>
-const token = new URLSearchParams(location.hash.slice(1)).get("t") || "";
+// The key comes in the link (#t=…) on the PC. On the phone it's kept after pairing once.
+let token = new URLSearchParams(location.hash.slice(1)).get("t") || "";
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+if (token) { store("amalgam_token", token); if (history.replaceState) history.replaceState(null, "", location.pathname); }
+else token = store("amalgam_token") || "";
+let PHONE = store("amalgam_phone") === "1";
 const $ = id => document.getElementById(id);
 let lastId = 0, chatId = undefined, rounds = 4, roundsTouched = false, lastStatus = "idle";
 const initials = {You: "Y", Claude: "C", GPT: "G", Terminal: ">_", "You ran": ">_", Reader: "◇"};
@@ -517,9 +633,16 @@ function termHtml(text) {
 
 
 async function api(path, data) {
+  if (PHONE && (path === "/api/open-url" || path === "/api/open-link")) { window.open(data.url, "_blank", "noopener"); return {ok: true}; }
+  if (PHONE && path === "/api/reveal") {
+    window.open(`/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(data.path)}`, "_blank"); return {ok: true};
+  }
+  if (path === "/api/open" || path === "/api/new" || path === "/api/project/new") { closeDrawer(); setTab("chat"); }
   const opts = data === undefined ? {headers: {"X-Token": token}}
     : {method: "POST", headers: {"X-Token": token, "Content-Type": "application/json"}, body: JSON.stringify(data)};
-  return (await fetch(path, opts)).json();
+  const r = await fetch(path, opts);
+  if (r.status === 403) { showPair(); throw new Error("not paired"); }
+  return r.json();
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
 // Small Markdown renderer: headings, lists, quotes, tables, code blocks (with copy), links, bold/italic.
@@ -1027,6 +1150,11 @@ async function poll() {
     const got = await api(`/api/state?after=${lastId}&focused=${document.hasFocus() ? 1 : 0}${lite ? "&lite=1" : ""}`);
     if (!lite) { lastFull = Date.now(); fullState = got; }
     const s = lite ? {...fullState, ...got} : got;
+    if (!lite && s.phone !== undefined && s.phone !== PHONE) { PHONE = s.phone; store("amalgam_phone", PHONE ? "1" : "0"); }
+    if (PHONE && $("search").placeholder.includes("Ctrl")) $("search").placeholder = "Search chats";
+    if (lastSyncRev !== null && s.sync_rev !== lastSyncRev) chatId = undefined;   // changes arrived from the other device
+    lastSyncRev = s.sync_rev;
+    $("reconnect").classList.remove("show");
     projectsById = Object.fromEntries((s.projects || []).map(p => [p.id, p]));
     const viewKey = s.chat_id + "|" + s.project_id;
     if (viewKey !== chatId) {
@@ -1085,6 +1213,11 @@ async function poll() {
     lastStatus = s.status;
 
     renderSidebar(s);
+    if (!lite) renderSync(s.sync);
+    lastCodeOk = !!(s.code && s.code.dir);
+    $("tabbar").querySelector('[data-tab="code"]').classList.toggle("disabled", !lastCodeOk);
+    if (tab === "code" && !lastCodeOk) setTab("chat");
+    if (PHONE) { $("pickCode").style.display = "none"; $("openCode").style.display = "none"; }
 
     let banners = "";
     if (s.demo) banners += `<div class="banner">Demo mode: these are stand-in models, not the real Claude and GPT.</div>`;
@@ -1092,9 +1225,13 @@ async function poll() {
     $("banners").innerHTML = banners;
     failures = 0;
   } catch (e) {
-    if (++failures >= 3) { showClosed(); return; }
+    if ($("pair").classList.contains("show")) return;     // waiting for the pairing code
+    if (++failures >= 3) {
+      if (PHONE) { $("reconnect").classList.add("show"); setTimeout(poll, 3000); return; }   // the phone pauses it; keep trying
+      showClosed(); return;
+    }
   }
-  setTimeout(poll, lastStatus === "running" ? 200 : 800);
+  setTimeout(poll, lastStatus === "running" ? 200 : (document.hidden && PHONE ? 3000 : 800));
 }
 let failures = 0, closing = false;
 function showClosed() {
@@ -1102,6 +1239,7 @@ function showClosed() {
     $("closed").querySelector("h2").textContent = "Updated! AI Amalgam is restarting…";
     $("closed").querySelector("p").textContent = "A fresh window opens in a few seconds. You can close this one.";
   }
+  if (PHONE) $("closed").querySelector("p").textContent = "To start it again, open the Terminal app and type amalgam.";
   $("closed").classList.add("show"); try { window.close(); } catch (e) {}
 }
 
@@ -1174,11 +1312,132 @@ function chime() {
   } catch (e) {}
 }
 function notifyCheck(s) {
-  if (prevStatus === "running" && s.status !== "running" && notifyOn && !document.hasFocus()) { unseen++; chime(); }
+  if (prevStatus === "running" && s.status !== "running" && notifyOn && !document.hasFocus()) {
+    unseen++; chime();
+    phoneNotify("AI Amalgam", s.code && s.code.pending_command ? "A command is waiting for your OK."
+      : s.status === "waiting" ? "A question is waiting for your answer." : s.hint === "error" ? "A model couldn't reply. Tap to retry."
+      : "The discussion finished.");
+    if (tab !== "chat") $("chatBadge").classList.add("show");
+  }
   prevStatus = s.status;
   document.title = unseen ? `(${unseen}) ● AI Amalgam` : "AI Amalgam";
 }
 window.addEventListener("focus", () => { unseen = 0; document.title = "AI Amalgam"; });
+
+
+// ---------- phone: pairing, drawer, bottom tabs, notifications ----------
+function showPair() {
+  if ($("pair").classList.contains("show")) return;
+  $("pair").classList.add("show"); $("pairCode").value = ""; setTimeout(() => $("pairCode").focus(), 50);
+}
+$("pairCode").addEventListener("input", async () => {
+  const code = $("pairCode").value.replace(/\D/g, "");
+  $("pairCode").value = code;
+  if (code.length !== 6) return;
+  $("pairErr").textContent = "";
+  try {
+    const r = await (await fetch("/api/pair?code=" + code)).json();
+    if (r.token) { token = r.token; store("amalgam_token", token); store("amalgam_phone", "1"); location.reload(); }
+    else { $("pairErr").textContent = r.error || "That code isn't right."; $("pairCode").value = ""; }
+  } catch (e) { $("pairErr").textContent = "Can't reach AI Amalgam. Is the Terminal app open?"; }
+});
+function closeDrawer() { document.body.classList.remove("drawer"); }
+$("drawerBtn").onclick = () => document.body.classList.add("drawer");
+$("scrim").onclick = closeDrawer;
+let tab = "chat", lastCodeOk = false;
+function setTab(t) {
+  if (t === "code" && !lastCodeOk) t = "chat";
+  tab = t;
+  document.body.classList.toggle("tab-info", t === "info");
+  $("tabbar").querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  if (t === "chat" || t === "code") setView(t);
+  if (t === "chat") $("chatBadge").classList.remove("show");
+  if (t === "info") { $("infoBadge").classList.remove("show"); document.querySelector(".right").scrollTop = 0; }
+}
+$("tabbar").querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
+  if (b.dataset.tab === "code" && !lastCodeOk) {
+    setTab("info"); const pc = $("projCard");
+    if (pc.style.display !== "none") pc.scrollIntoView({behavior: "smooth"});
+    else alert("The Code tab is for projects with a code folder. Open a project, then set its code folder under Info → Project.");
+    return;
+  }
+  setTab(b.dataset.tab);
+});
+// swipe from the left edge opens the menu; swipe left closes it
+let touchX = null, touchY = null;
+document.addEventListener("touchstart", e => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; }, {passive: true});
+document.addEventListener("touchend", e => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX, dy = Math.abs(e.changedTouches[0].clientY - touchY);
+  if (dy < 60 && touchX < 28 && dx > 60) document.body.classList.add("drawer");
+  if (dy < 60 && dx < -60 && document.body.classList.contains("drawer")) closeDrawer();
+  touchX = null;
+}, {passive: true});
+let swReg = null;
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").then(r => { swReg = r; }).catch(() => {});
+function phoneNotify(title, body) {
+  if (!PHONE || !document.hidden || !swReg || !("Notification" in window) || Notification.permission !== "granted") return;
+  swReg.showNotification(title, {body, icon: "/icon-192.png", badge: "/icon-192.png", tag: "amalgam", renotify: true});
+}
+function askNotifyPermission() {
+  if (PHONE && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
+}
+document.addEventListener("click", askNotifyPermission, {once: true});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { api("/api/sync/now", {}).catch(() => {}); failures = 0; }
+});
+
+// ---------- sync card ----------
+let syncSig = "", syncFormOpen = false, lastSyncRev = null;
+const KEY_URL = "https://github.com/settings/personal-access-tokens/new?name=AI+Amalgam+sync&description=Lets+AI+Amalgam+sync+through+amalgam-sync&expires_in=366&contents=write";
+const REPO_URL = "https://github.com/new?name=amalgam-sync&visibility=private&description=AI+Amalgam+sync+(private)";
+function ago(t) {
+  const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? "just now" : s < 3600 ? Math.floor(s / 60) + " min ago" : new Date(t * 1000).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"});
+}
+function renderSync(y) {
+  if (!y) return;
+  const sig = JSON.stringify([y, syncFormOpen, Math.floor(Date.now() / 30000)]);
+  if (sig === syncSig) return; syncSig = sig;
+  if (document.activeElement && $("syncBody").contains(document.activeElement)) return;
+  $("syncNow").style.display = y.configured ? "" : "none";
+  $("infoBadge").classList.toggle("show", y.state === "error");
+  if (!y.configured || syncFormOpen) {
+    $("syncBody").innerHTML = `<p class="help" style="margin:0">Keep chats, projects and code the same on your PC and phone, through a private GitHub space only you can see.</p>
+      <ol class="syncsteps">
+        <li>Make your private sync space (once):<br><button class="btn" data-ext="${REPO_URL}">Make my sync space</button></li>
+        <li>Make a key: choose <b>Only select repositories → amalgam-sync</b>, then Generate and Copy:<br><button class="btn" data-ext="${KEY_URL}">Get my key</button></li>
+        <li>Paste the key here:<br>
+          <input id="syncKey" class="field" placeholder="github_pat_…" spellcheck="false" autocomplete="off" style="margin-top:4px">
+          <input id="syncDevice" class="field" placeholder="This device's name" value="${esc(y.device || "")}" maxlength="30" style="margin-top:6px"></li>
+      </ol>
+      <div class="btnrow"><button class="btn go" id="syncConnect">Connect</button>${syncFormOpen ? `<button class="btn" id="syncCancel">Cancel</button>` : ""}</div>
+      <p class="syncerr" id="syncErr" style="display:none"></p>
+      <p class="help">Already set up on your other device? Use the same key here. You can reuse it as long as it's valid.</p>`;
+    $("syncBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
+    $("syncConnect").onclick = async () => {
+      $("syncConnect").disabled = true; $("syncConnect").textContent = "Checking…";
+      try {
+        const r = await api("/api/sync/connect", {key: $("syncKey").value, device: $("syncDevice").value});
+        if (r.error) { $("syncErr").textContent = r.error; $("syncErr").style.display = ""; }
+        else { syncFormOpen = false; syncSig = ""; }
+      } finally { if ($("syncConnect")) { $("syncConnect").disabled = false; $("syncConnect").textContent = "Connect"; } }
+    };
+    if ($("syncCancel")) $("syncCancel").onclick = () => { syncFormOpen = false; syncSig = ""; renderSync(y); };
+    return;
+  }
+  const dot = y.busy ? "busy" : y.state === "error" ? "err" : y.last_ok ? "ok" : "";
+  const label = y.busy ? "Syncing…" : y.state === "error" ? "Not synced" : y.last_ok ? "Synced " + ago(y.last_ok) : "Waiting to sync";
+  $("syncBody").innerHTML = `<div class="syncst"><span class="dot ${dot}"></span><span>${label}</span></div>
+    ${y.state === "error" ? `<p class="syncerr">${esc(y.error)}</p>` : ""}
+    ${y.conflicts && y.conflicts.length ? `<p class="help">Edited on both devices, so both versions were kept (yours has "conflict" in its name): ${esc(y.conflicts.join(", "))}</p>` : ""}
+    ${(y.notes || []).map(n => `<p class="help">${esc(n)}</p>`).join("")}
+    <p class="help">This is <b>${esc(y.device)}</b>, syncing with <b>${esc(y.who)}</b>. It syncs when you open the app, after each discussion, every couple of minutes, and when ${PHONE ? "you stop it" : "you close it"}.</p>
+    <div class="btnrow"><button class="mini" id="syncChange">Change key</button><button class="mini" id="syncOff">Stop syncing here</button></div>`;
+  $("syncChange").onclick = () => { syncFormOpen = true; syncSig = ""; renderSync(y); };
+  $("syncOff").onclick = () => { if (confirm("Stop syncing on this device? Nothing is deleted here or on GitHub.")) api("/api/sync/disconnect", {}); };
+}
+$("syncNow").onclick = () => api("/api/sync/now", {});
 
 // ---------- search ----------
 let searchTimer = null;
@@ -1319,6 +1578,7 @@ function setView(v) {
   if (v === "code") loadCodeTab();
 }
 $("viewTabs").querySelectorAll("button").forEach(b => b.onclick = () => setView(b.dataset.view));
+$("backFiles").onclick = () => $("ct-files").classList.remove("viewing");
 document.querySelectorAll(".ctabs [data-ct]").forEach(b => b.onclick = () => {
   ctab = b.dataset.ct;
   document.querySelectorAll(".ctabs [data-ct]").forEach(x => x.classList.toggle("on", x === b));
@@ -1407,6 +1667,7 @@ function highlight(code, ext) {
 }
 async function showFile(path, quiet) {
   openFile = path;
+  if (!quiet) $("ct-files").classList.add("viewing");
   $("fileItems").querySelectorAll("[data-file]").forEach(b => b.classList.toggle("on", b.dataset.file === path));
   $("vName").textContent = path;
   $("runBtn").style.display = RUNNABLE.test(path) ? "" : "none";
