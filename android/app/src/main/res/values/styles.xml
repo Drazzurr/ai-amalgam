@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AmalgamTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bar</item>
+        <item name="android:navigationBarColor">@color/side</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+    <color name="bg">#1a1b1e</color>
+    <color name="bar">#141517</color>
+    <color name="side">#141517</color>
+</resources>

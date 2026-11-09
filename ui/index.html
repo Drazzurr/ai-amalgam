@@ -552,6 +552,10 @@
 <div class="right">
   <div class="infohead mob" style="display:none">Info &amp; settings</div>
   <div id="banners"></div>
+  <div class="card" id="appCard" style="display:none">
+    <div class="cardhead"><h3>Phone app</h3></div>
+    <div id="appBody"></div>
+  </div>
   <div class="card" data-card="sync" id="syncCard">
     <div class="cardhead"><h3>Sync</h3><button class="mini" id="syncNow" style="display:none">Sync now</button></div>
     <div id="syncBody"><p class="help" style="margin:0">Checking…</p></div>
@@ -636,6 +640,14 @@ function store(k, v) { try { if (v === undefined) return localStorage.getItem(k)
 if (token) { store("amalgam_token", token); if (history.replaceState) history.replaceState(null, "", location.pathname); }
 else token = store("amalgam_token") || "";
 let PHONE = store("amalgam_phone") === "1";
+// Inside the AI Amalgam Android app: hand it the key (for notifications) and learn its connection helper
+const APP = window.AmalgamApp || null;
+if (APP) { PHONE = true; store("amalgam_phone", "1"); }
+function appHello() {
+  if (!APP || !token) return;
+  try { APP.setToken(token); } catch (e) {}
+  try { api("/api/proxy", JSON.parse(APP.proxyInfo())).catch(() => {}); } catch (e) {}
+}
 const $ = id => document.getElementById(id);
 let lastId = 0, chatId = undefined, rounds = 4, roundsTouched = false, lastStatus = "idle";
 const initials = {You: "Y", Claude: "C", GPT: "G", Terminal: ">_", "You ran": ">_", Reader: "◇"};
@@ -1170,6 +1182,7 @@ function renderUpdate(u) {
 }
 let restartingNow = false;
 
+let appHelloDone = false;
 let modelsSig = "", connSig = "", usageSig = "", lastFull = 0, fullState = {}, currentProject = null, lastRendered = 0;
 async function poll() {
   try {
@@ -1184,6 +1197,7 @@ async function poll() {
     }
     lastRendered = Date.now();
     if (!lite) { lastFull = Date.now(); fullState = got; }
+    if (APP && !appHelloDone) { appHelloDone = true; appHello(); }
     const s = lite ? {...fullState, ...got} : got;
     if (!lite && s.phone !== undefined && s.phone !== PHONE) { PHONE = s.phone; store("amalgam_phone", PHONE ? "1" : "0"); }
     if (PHONE && $("search").placeholder.includes("Ctrl")) $("search").placeholder = "Search chats";
@@ -1254,7 +1268,7 @@ async function poll() {
     lastStatus = s.status;
 
     renderSidebar(s);
-    if (!lite) renderSync(s.sync);
+    if (!lite) { renderSync(s.sync); renderAppCard(s); }
     lastCodeOk = !!(s.code && s.code.dir);
     $("tabbar").querySelector('[data-tab="code"]').classList.toggle("disabled", !lastCodeOk);
     if (tab === "code" && !lastCodeOk) setTab("chat");
@@ -1267,7 +1281,8 @@ async function poll() {
     // phone: the connection dropped (usually after switching Wi-Fi / mobile data)
     const net = s.network;
     const netMsg = !net || net.ok ? "" : !net.gave_up ? "Reconnecting to the internet…"
-      : "No internet in AI Amalgam. If your phone is online, close the Terminal app fully and open it again.";
+      : !net.app ? "No internet in AI Amalgam. On mobile data, use the AI Amalgam app (Info → Phone app) so it can share the phone's connection."
+      : "No internet in AI Amalgam. Check that the phone is online and the AI Amalgam app is open.";
     if (!lite) { $("netwarn").textContent = netMsg; $("netwarn").classList.toggle("show", !!netMsg); }
     failures = 0;
   } catch (e) {
@@ -1432,6 +1447,7 @@ document.addEventListener("touchend", e => {
 let swReg = null;
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").then(r => { swReg = r; }).catch(() => {});
 function phoneNotify(title, body) {
+  if (APP) return;     // the Android app sends these itself, even when it's closed
   if (!PHONE || !document.hidden || !swReg || !("Notification" in window) || Notification.permission !== "granted") return;
   swReg.showNotification(title, {body, icon: "/icon-192.png", badge: "/icon-192.png", tag: "amalgam", renotify: true});
 }
@@ -1442,6 +1458,32 @@ document.addEventListener("click", askNotifyPermission, {once: true});
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) { api("/api/sync/now", {}).catch(() => {}); failures = 0; }
 });
+
+// ---------- phone app card ----------
+const APK_URL = "https://github.com/Drazzurr/ai-amalgam/releases/download/android/AI-Amalgam.apk";
+function newer(a, b) {   // is version a newer than b?
+  const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+}
+let appSig = "";
+function renderAppCard(s) {
+  if (!PHONE) { $("appCard").style.display = "none"; return; }
+  const cur = s.update && s.update.current, mine = APP ? APP.version() : null;
+  const sig = JSON.stringify([cur, mine, s.network && s.network.via]);
+  if (sig === appSig) return; appSig = sig;
+  $("appCard").style.display = "";
+  if (!APP) {
+    $("appBody").innerHTML = `<p class="help" style="margin:0">Get the <b>AI Amalgam app</b>. It lets Amalgam use mobile data (the Linux system can't on its own), opens the Terminal for you, and sends notifications even when it's closed.</p>
+      <div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Download the app</button></div>
+      <p class="help">After it downloads, tap it and choose Install (allow Chrome to install apps if asked). Then open AI Amalgam from the new icon and use the same pairing code.</p>`;
+  } else {
+    const via = s.network && s.network.via === "app";
+    $("appBody").innerHTML = `<p class="help" style="margin:0">App ${esc(mine)}${via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
+      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>` : ""}`;
+  }
+  $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
+}
 
 // ---------- sync card ----------
 let syncSig = "", syncFormOpen = false, lastSyncRev = null;
@@ -1537,7 +1579,11 @@ $("exportMd").onclick = async () => {
   document.body.appendChild(a); a.click(); a.remove();
 };
 $("copyChat").onclick = async () => copyText((await chatMarkdown()).md);
-if (navigator.share) {
+if (APP) {
+  $("shareChat").style.display = "";
+  $("shareChat").onclick = async () => { const {title, md} = await chatMarkdown(); APP.share(title, md); };
+  $("exportMd").onclick = async () => { const {title, md} = await chatMarkdown(); APP.share(title + ".md", md); };
+} else if (navigator.share) {
   $("shareChat").style.display = "";
   $("shareChat").onclick = async () => {
     const {title, md} = await chatMarkdown();

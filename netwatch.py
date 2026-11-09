@@ -4,19 +4,26 @@ mobile data.
 Every 30 seconds (and whenever something fails to reach the internet) it checks whether GitHub,
 Anthropic and OpenAI can be reached. If not, it tries to repair the connection by itself, in
 gentle steps: renew the network address, restart the network services, flush name lookups,
-and as a last resort add public name servers. After a repair it re-checks, tells sync to run,
+and as a last resort add public name servers.
+
+On mobile data, Android doesn't give the Linux system internet at all. Then Amalgam uses the
+AI Amalgam Android app's built-in proxy (the app runs on the phone, which does have internet):
+all of Amalgam's traffic (Claude, Codex, git, updates) goes through it until the Linux system's
+own connection works again. After a repair it re-checks, tells sync to run,
 and re-checks for updates. Only if nothing works does the app show a note asking you to restart
 the Terminal app.
 
 The repairs use `sudo -n` (never asks for a password; the Pixel Terminal's user doesn't need one).
 """
 
+import base64
 import os
 import shutil
 import socket
 import subprocess
 import threading
 import time
+import urllib.request
 
 HOSTS = ("github.com", "api.anthropic.com", "chatgpt.com")
 CHECK_EVERY = 30          # seconds, while things are fine
@@ -65,17 +72,89 @@ def _sudo(*cmd, timeout=25):
         return False
 
 
+PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+
+
+def gateway():
+    """The phone's side of the Linux system's network link (where the Android app listens)."""
+    try:
+        with open("/proc/net/route", encoding="ascii") as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) > 2 and parts[1] == "00000000" and parts[2] != "00000000":
+                    raw = bytes.fromhex(parts[2])[::-1]
+                    return socket.inet_ntoa(raw)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _proxy_works(host, port, user, password, target="github.com:443", timeout=8):
+    """Ask the app's proxy to open a connection to GitHub; True if it says yes."""
+    auth = base64.b64encode(f"{user}:{password}".encode()).decode()
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nProxy-Authorization: Basic {auth}\r\n\r\n".encode())
+            s.settimeout(timeout)
+            first = s.recv(64).decode("latin-1", "replace")
+            return first.startswith("HTTP/1.1 200") or first.startswith("HTTP/1.0 200")
+    except OSError:
+        return False
+
+
+def _set_proxy_env(url):
+    for k in PROXY_VARS:
+        if url:
+            os.environ[k] = url
+        else:
+            os.environ.pop(k, None)
+    if url:
+        os.environ["NO_PROXY"] = os.environ["no_proxy"] = "localhost,127.0.0.1,::1"
+    # Python keeps the proxy settings it read first; make it read them again
+    urllib.request.install_opener(urllib.request.build_opener())
+
+
 class NetWatch:
-    def __init__(self, on_restored=None, log=print):
+    def __init__(self, on_restored=None, log=print, proxy=None):
         self.on_restored = on_restored or (lambda: None)
         self.log = log
+        self.proxy = proxy          # {"port", "user", "password"} from the Android app
+        self.via_proxy = False
         self.state = {"ok": True, "checked": 0, "problem": "", "fixing": False, "fixed_at": 0, "fixes": 0,
-                      "gave_up": False}
+                      "gave_up": False, "via": None, "app": bool(proxy)}
         self._wake = threading.Event()
         self._last_fix = 0
 
     def view(self):
         return dict(self.state)
+
+    def set_proxy(self, info):
+        """The Android app told us how to reach its proxy."""
+        self.proxy = info
+        self.state["app"] = bool(info)
+        self.poke()
+
+    def _try_proxy(self):
+        if not self.proxy:
+            return False
+        gw = gateway()
+        if not gw:
+            return False
+        p = self.proxy
+        if not _proxy_works(gw, int(p["port"]), p["user"], p["password"]):
+            return False
+        url = f"http://{p['user']}:{p['password']}@{gw}:{int(p['port'])}"
+        if os.environ.get("HTTPS_PROXY") != url:
+            _set_proxy_env(url)
+            self.log(f"Network: no internet of our own; using the AI Amalgam app's connection ({gw}).")
+        self.via_proxy = True
+        return True
+
+    def _drop_proxy(self):
+        if self.via_proxy:
+            _set_proxy_env(None)
+            self.via_proxy = False
+            self.log("Network: own internet is back; no longer going through the app.")
 
     def poke(self):
         """Something just failed to reach the internet: check now."""
@@ -87,21 +166,30 @@ class NetWatch:
 
     def loop(self, quit_event):
         while not quit_event.is_set():
-            ok, results = self.check()
+            ok, results = self.check()           # always the Linux system's own connection
             self.state["checked"] = time.time()
             if ok:
-                if not self.state["ok"]:
-                    self.log("Network: back by itself.")
+                was_proxy = self.via_proxy
+                self._drop_proxy()
+                if not self.state["ok"] or was_proxy:
+                    if not was_proxy:
+                        self.log("Network: back by itself.")
                     self._restored()
-                self.state.update(ok=True, problem="", gave_up=False)
+                self.state.update(ok=True, problem="", gave_up=False, via=None)
+            elif self._try_proxy():
+                if not self.state["ok"] or self.state["via"] != "app":
+                    self._restored()
+                self.state.update(ok=True, problem="", gave_up=False, via="app")
             else:
-                self.state["ok"] = False
+                self._drop_proxy()
+                self.state.update(ok=False, via=None)
                 self._repair(results)
             self._wake.wait(CHECK_EVERY if self.state["ok"] else RETRY_EVERY)
             self._wake.clear()
 
     def _restored(self):
         self.state.update(ok=True, problem="", fixed_at=time.time(), gave_up=False)
+        self.state["via"] = "app" if self.via_proxy else None
         try:
             self.on_restored()
         except Exception as e:

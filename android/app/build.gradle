@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+// version comes from the app's VERSION file, e.g. 1.8.0 -> versionCode 10800
+def appVersion = file("../../VERSION").text.trim()
+def parts = appVersion.tokenize('.').collect { it as int }
+def code = parts[0] * 10000 + parts[1] * 100 + parts[2]
+
+android {
+    namespace 'com.drazzurr.amalgam'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.drazzurr.amalgam'
+        minSdk 31
+        targetSdk 34
+        versionCode code
+        versionName appVersion
+    }
+
+    signingConfigs {
+        release {
+            // the build server provides the signing key (kept secret); local builds use the debug key
+            def ks = System.getenv("AMALGAM_KEYSTORE")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("AMALGAM_KEYSTORE_PASSWORD")
+                keyAlias "amalgam"
+                keyPassword System.getenv("AMALGAM_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv("AMALGAM_KEYSTORE") ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -320,7 +320,11 @@ class App:
         self.net = None
         if self.phone and not args.demo:
             from netwatch import NetWatch
-            self.net = NetWatch(on_restored=self._network_back)
+            try:
+                saved_proxy = json.loads(self.store.get_setting("phone_proxy", "") or "null")
+            except ValueError:
+                saved_proxy = None
+            self.net = NetWatch(on_restored=self._network_back, proxy=saved_proxy)
             self.sync.on_network_error = self.net.poke
 
     def _after_import(self, chat_ids):
@@ -981,6 +985,17 @@ class App:
                         app.store.set_setting("device_name", name)
                         app.sync.device = name
                     return self._json({"ok": True, "repo": full})
+                elif path == "/api/proxy":
+                    # the AI Amalgam Android app shares the phone's internet through this proxy
+                    try:
+                        info = {"port": int(data.get("port")), "user": str(data.get("user") or "amalgam")[:40],
+                                "password": str(data.get("password") or "")[:200]}
+                    except (TypeError, ValueError):
+                        return self._json({"error": "bad proxy info"}, 400)
+                    if info["password"]:
+                        app.store.set_setting("phone_proxy", json.dumps(info))
+                        if app.net:
+                            app.net.set_proxy(info)
                 elif path == "/api/sync/now":
                     app.sync.request()
                 elif path == "/api/sync/disconnect":
