@@ -582,9 +582,14 @@ class App:
             def _file(self, path, ctype):
                 with open(path, "rb") as f:
                     body = f.read()
+                if path == UI_FILE:
+                    # tell the page which version it is, so it can reload itself after an update
+                    body = body.replace(b"__AMALGAM_VERSION__", app.updater.current_version().encode())
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
+                # always check for a newer copy (the phone's Chrome otherwise keeps old pages)
+                self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(body)
 

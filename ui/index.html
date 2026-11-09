@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#141517">
+<meta name="amalgam-version" content="__AMALGAM_VERSION__">
 <title>AI Amalgam</title>
 <link rel="icon" href="/favicon.ico">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -1210,6 +1211,11 @@ async function poll() {
     refreshChoices(s.status);
     pendingPaths = s.pending_paths || []; renderChips(s.pending_files);
     renderUpdate(s.update);
+    // the app was updated but this page is the old copy: load the new one
+    const pageV = document.querySelector('meta[name="amalgam-version"]').content;
+    if (s.update && s.update.current && !pageV.startsWith("__") && s.update.current !== pageV && !sessionStorage.getItem("reloaded-" + s.update.current)) {
+      sessionStorage.setItem("reloaded-" + s.update.current, "1"); location.reload(); return;
+    }
     renderEdits(s.doc_edits);
     $("stopBtn").classList.toggle("show", s.status === "running");
     renderCode(s);
