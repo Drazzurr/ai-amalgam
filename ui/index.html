@@ -45,7 +45,14 @@
   .projrow { display: flex !important; align-items: center; gap: 8px; color: var(--ink) !important; font-weight: 550; }
   .projrow svg { flex: none; color: var(--quiet); }
   .projrow .cnt { margin-left: auto; font-size: 11.5px; color: var(--faint); font-weight: 400; }
+  .projchats { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
+  .projchats > div { overflow: hidden; min-height: 0; }
+  .proj.open .projchats { grid-template-rows: 1fr; }
+  .projrow .chev { flex: none; color: var(--faint); transition: transform .2s ease; margin-left: 2px; }
+  .proj.open .projrow .chev { transform: rotate(90deg); }
+  .projrow .cnt { margin-left: auto; }
   .projchats button { padding-left: 34px !important; font-size: 13.5px !important; }
+  @media (prefers-reduced-motion: reduce) { .projchats, .projrow .chev { transition: none; } }
   .projchats .newin { color: var(--faint) !important; font-size: 13px !important; }
   .field.area { min-height: 92px; resize: vertical; margin-top: 8px; font-family: inherit; line-height: 1.45; }
   .crumb { color: var(--faint); font-weight: 500; }
@@ -1005,15 +1012,19 @@ function renderUsage(usage, models) {
 }
 
 const folder = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
-let openProjects = new Set(), sidebarSig = "", projFormFor = null, renaming = false;
+const chev = `<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
+let openProjects = new Set(), sidebarSig = "", projFormFor = null, renaming = false, lastOpenedFor = null;
 let currentChat = null;
 function renderSidebar(s) {
   currentChat = s.chat_id;
   const current = s.chats.find(c => c.id === s.chat_id);
   const proj = projectsById[s.project_id];
   $("title").innerHTML = (proj ? `<span class="crumb">${esc(proj.name)} › </span>` : "") + esc(current ? current.title : "New chat");
-  if (s.project_id) openProjects.add(s.project_id);
-  const sig = JSON.stringify([s.chats, s.projects.map(p => [p.id, p.name]), s.chat_id, s.project_id, [...openProjects]]);
+  // open the current chat's project once when you arrive in it; after that, it's up to you
+  const arrived = `${s.project_id}:${s.chat_id}`;
+  if (s.project_id && arrived !== lastOpenedFor) openProjects.add(s.project_id);
+  lastOpenedFor = arrived;
+  const sig = JSON.stringify([s.chats, s.projects.map(p => [p.id, p.name]), s.chat_id, s.project_id]);
   if (sig !== sidebarSig && !renaming) {
     sidebarSig = sig;
     const btn = c => `<div class="crow ${c.id === s.chat_id ? "on" : ""}"><button data-id="${c.id}" class="${c.id === s.chat_id ? "on" : ""}" title="${esc(c.title)}" style="padding-right:${c.id === s.chat_id ? 60 : 10}px">${esc(c.title)}</button>
@@ -1021,9 +1032,10 @@ function renderSidebar(s) {
     $("projects").innerHTML = s.projects.length ? s.projects.map(p => {
       const chats = s.chats.filter(c => c.project_id === p.id), open = openProjects.has(p.id);
       const here = s.project_id === p.id && !s.chat_id;
-      return `<div class="proj"><button class="projrow ${here ? "on" : ""}" data-proj="${p.id}" title="${esc(p.name)}">${folder}
-        <span style="overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</span><span class="cnt">${chats.length || ""}</span></button>
-        ${open ? `<div class="projchats"><button class="newin" data-newin="${p.id}">+ New chat in project</button>${chats.map(btn).join("")}</div>` : ""}</div>`;
+      return `<div class="proj ${open ? "open" : ""}" data-pid="${p.id}"><button class="projrow ${here ? "on" : ""}" data-proj="${p.id}" title="${esc(p.name)}" aria-expanded="${open}">${folder}
+        <span style="overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</span><span class="cnt">${chats.length || ""}</span>${chev}</button>
+        <div class="projchats"><div><button class="newin" data-newin="${p.id}">+ New chat in project</button>${chats.map(btn).join("")}
+        <button class="newin" data-projset="${p.id}">⚙ Project settings</button></div></div></div>`;
     }).join("") : `<div class="none">Group chats into projects with +</div>`;
     const loose = s.chats.filter(c => !c.project_id);
     $("chats").innerHTML = loose.length ? loose.map(btn).join("") : `<div class="none">Your chats will show up here.</div>`;
@@ -1045,11 +1057,17 @@ function renderSidebar(s) {
       inp.addEventListener("keydown", ev => { if (ev.key === "Enter") done(true); if (ev.key === "Escape") done(false); });
       inp.addEventListener("blur", () => done(true));
     });
+    // a project opens and closes in place, like a folder; nothing else changes
     document.querySelectorAll("[data-proj]").forEach(b => b.onclick = () => {
-      const id = +b.dataset.proj;
-      if (openProjects.has(id) && s.project_id === id) openProjects.delete(id); else openProjects.add(id);
-      sidebarSig = "";
-      if (s.project_id !== id) api("/api/new", {project_id: id}); else renderSidebar(s);
+      const id = +b.dataset.proj, box = b.closest(".proj");
+      const open = !openProjects.has(id);
+      open ? openProjects.add(id) : openProjects.delete(id);
+      box.classList.toggle("open", open);
+      b.setAttribute("aria-expanded", open);
+    });
+    document.querySelectorAll("[data-projset]").forEach(b => b.onclick = () => {
+      const id = +b.dataset.projset;
+      api("/api/new", {project_id: id}).then(() => { if (window.matchMedia("(max-width: 760px)").matches) { setTab("info"); setTimeout(() => $("projCard").scrollIntoView({behavior: "smooth"}), 400); } });
     });
   }
   // move-to-project selector (only for saved chats)
