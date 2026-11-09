@@ -773,7 +773,8 @@ class App:
                     app.store.set_setting("game_folders_user", json.dumps(user))
                     app._load_game_folders(detect=False)
                 elif path == "/api/reveal":
-                    p = os.path.realpath(str(data.get("path", "")))
+                    raw = str(data.get("path", ""))
+                    p = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(WORKSPACE, raw))
                     root = os.path.realpath(WORKSPACE)
                     if os.path.commonpath([p, root]) == root and os.path.exists(p):
                         if sys.platform == "win32":

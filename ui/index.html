@@ -251,6 +251,11 @@
   .mdimg small { display: block; color: var(--faint); font-size: 12px; margin-top: 3px; }
   .mdimg.broken img { display: none; } .mdimg.broken small::before { content: "(image not found) "; color: #ef8b8b; }
   .body td .mdimg img { max-width: 260px; max-height: 300px; }
+  .attachrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: flex-end; }
+  .attimg img { height: 140px; max-width: 220px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; }
+  .attimg:hover img { border-color: #6c7380; }
+  .attchip { font-size: 13px; color: var(--quiet); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; }
+  .fthumb { width: 26px; height: 26px; object-fit: cover; border-radius: 5px; margin-right: 2px; vertical-align: middle; }
   .err2 { color: #ef8b8b; font-size: 12.5px; margin: 6px 0 0; }
 
   /* ---------- composer ---------- */
@@ -518,6 +523,25 @@ async function api(path, data) {
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
 // Small Markdown renderer: headings, lists, quotes, tables, code blocks (with copy), links, bold/italic.
+// ---------- your attachments, shown in your messages ----------
+let attByName = {}, attUsed = {};
+function setAttachments(list, reset) {
+  attByName = {};
+  for (const a of list || []) (attByName[a.name] = attByName[a.name] || []).push(a.path);
+  if (reset) attUsed = {};
+}
+function attachmentHtml(label) {
+  const name = label.replace(/ \((unzipped|couldn't unzip)[^)]*\)$/, "");
+  const paths = attByName[name] || [];
+  const k = attUsed[name] || 0;
+  const path = paths[Math.min(k, paths.length - 1)];
+  attUsed[name] = k + 1;
+  if (path && /\.(png|jpe?g|webp|gif|bmp)$/i.test(name)) {
+    const url = `/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`;
+    return `<a href="#" class="attimg" data-imgopen="${esc(path)}" title="${esc(name)}"><img src="${url}" alt="${esc(name)}" loading="lazy"></a>`;
+  }
+  return `<span class="attchip">📎 ${esc(label)}</span>`;
+}
 function mdImage(alt, src) {
   let p = src.trim();
   try { p = decodeURIComponent(p); } catch (e) {}
@@ -632,6 +656,11 @@ function addMessage(m, animate) {
     }
     if (m.kind === "user") markPicked(m.text);
     let inner = m.kind === "question" ? askHtml : `<div class="body">${render(m.text)}</div>`;
+    if (m.kind === "user" && /\n📎 /.test("\n" + m.text)) {
+      const lines = m.text.split("\n"), files = [];
+      while (lines.length && /^📎 /.test(lines[lines.length - 1])) files.unshift(lines.pop().slice(2).trim());
+      inner = `<div class="body">${render(lines.join("\n").trim())}</div><div class="attachrow">${files.map(attachmentHtml).join("")}</div>`;
+    }
     if (m.kind === "command") {
       commandsById[m.id] = m;
       inner = `<div class="cmdreq"><div class="tag">Asked to run</div>${m.text.split("\n").map(c => `<div class="cmd">$ ${esc(c)}</div>`).join("")}</div>`;
@@ -936,12 +965,18 @@ async function uploadFiles(list) {
   renderChips(lastPending); grow();
 }
 let lastPending = [], chipsSig = "";
+let pendingPaths = [];
 function renderChips(pending) {
   lastPending = pending || [];
-  const sig = JSON.stringify([lastPending, uploading]);
+  const sig = JSON.stringify([lastPending, uploading, pendingPaths]);
   if (sig === chipsSig) return;
   chipsSig = sig;
-  $("fileChips").innerHTML = lastPending.map((n, i) => `<div class="fchip">📎 <span title="${esc(n)}">${esc(n)}</span><button data-un="${i}" title="Remove">×</button></div>`).join("")
+  $("fileChips").innerHTML = lastPending.map((n, i) => {
+    const p = (pendingPaths || [])[i];
+    const thumb = p && /\.(png|jpe?g|webp|gif|bmp)$/i.test(n)
+      ? `<img class="fthumb" src="/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(p)}" alt="">` : "📎 ";
+    return `<div class="fchip">${thumb}<span title="${esc(n)}">${esc(n)}</span><button data-un="${i}" title="Remove">×</button></div>`;
+  }).join("")
     + uploading.map(n => `<div class="fchip busy">⏳ <span>${esc(n)}</span></div>`).join("");
   $("fileChips").querySelectorAll("[data-un]").forEach(b => b.onclick = () => api("/api/unattach", {index: +b.dataset.un}));
   $("sendBtn").disabled = !$("input").value.trim() && !lastPending.length;
@@ -998,12 +1033,14 @@ async function poll() {
       chatId = viewKey; lastId = 0; commandsById = {}; termItems = []; termSig = ""; msgsById = {};
       if (editing) stopEditing();
       const full = await api("/api/state?after=0");
+      setAttachments(full.attachments, true);
       $("log").innerHTML = "";
       if (!full.messages.length) showEmpty(s.project_id); else typingEl();
       full.messages.forEach(addMessage);
       if (full.messages.length) lastId = full.messages[full.messages.length - 1].id;
       $("log").scrollTop = $("log").scrollHeight;
     } else {
+      setAttachments(s.attachments, false);
       s.messages.forEach(m => { addMessage(m, true); lastId = m.id; });
       const p = projectsById[s.project_id], ek = p ? `${p.id}|${!!p.code_dir}|${!!p.doc_link}` : "";
       if ($("log").querySelector(".empty") && $("log").dataset.ek !== ek) { $("log").dataset.ek = ek; showEmpty(s.project_id); }
@@ -1025,7 +1062,7 @@ async function poll() {
 
     renderLive(s);
     refreshChoices(s.status);
-    renderChips(s.pending_files);
+    pendingPaths = s.pending_paths || []; renderChips(s.pending_files);
     renderUpdate(s.update);
     renderEdits(s.doc_edits);
     $("stopBtn").classList.toggle("show", s.status === "running");

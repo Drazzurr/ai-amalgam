@@ -565,6 +565,7 @@ class Orchestrator:
             "max_rounds": self.max_rounds,
             "chat_settings": self.chat_settings(),
             "pending_files": [f["name"] for f in self.pending_files],
+            "pending_paths": [os.path.relpath(f["abs"], self.workspace).replace("\\", "/") for f in self.pending_files],
             "attachments": self.store.attachments(self.chat_id) if self.chat_id else [],
             "doc_edits": self.store.doc_edits(self.chat_id, self.project_id) if self.chat_id or self.project_id else [],
             "condensed": self.store.summary(self.chat_id)[1] > 0 if self.chat_id else False,
