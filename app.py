@@ -581,10 +581,18 @@ class App:
                         state["ui_collapsed"] = None
                     return self._json(state)
                 if url.path == "/api/img":
-                    p = os.path.realpath(parse_qs(url.query).get("path", [""])[0])
-                    root = os.path.realpath(WORKSPACE)
-                    if os.path.commonpath([p, root]) != root or not os.path.isfile(p) or \
-                            not p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                    raw = parse_qs(url.query).get("path", [""])[0]
+                    p = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(WORKSPACE, raw))
+                    roots = [WORKSPACE] + list(app.orch.game_folders) + [app.orch.code_dir() or WORKSPACE]
+
+                    def under(r):
+                        try:
+                            r = os.path.realpath(r)
+                            return os.path.commonpath([p, r]) == r
+                        except ValueError:
+                            return False
+                    if not any(under(r) for r in roots) or not os.path.isfile(p) or \
+                            not p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")):
                         return self._json({"error": "not found"}, 404)
                     with open(p, "rb") as f:
                         body = f.read()

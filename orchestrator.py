@@ -1269,6 +1269,9 @@ class Orchestrator:
             doc += CODE_LINE.format(path=code_dir, role=role, changes=changes, timeout=COMMAND_TIMEOUT,
                                     shell="Windows PowerShell" if sys.platform == "win32" else "bash")
 
+        doc += ("\nTo show the user a picture (an attachment, an extracted texture, a generated image), put it in your "
+                "message as Markdown: ![short caption](<full or workspace-relative path>). The app displays it. "
+                "Don't just give bare file paths.\n")
         files = self.store.attachments(self.chat_id) if self.chat_id else []
         if files:
             doc += ("\nFiles the user attached (in your working folder; open them with your file-reading tool "
