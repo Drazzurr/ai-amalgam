@@ -18,7 +18,8 @@
     <div style="margin-top:12px"><a href="#" style="color:#a3a6ad" onclick="AmalgamApp.skipAutoReturn();return false">Not now</a></div>
   </div>
   <button id="open" onclick="AmalgamApp.openTerminal()">Open Terminal</button>
-  <div class="wait"><span class="dot"></span>Waiting for AI Amalgam…</div>
+  <div class="wait"><span class="dot"></span><span id="stage">Waiting for AI Amalgam…</span></div>
+  <p id="slow" style="display:none;margin-top:16px;font-size:13.5px">This is taking longer than usual. Open the Terminal and type <b>amalgam</b>, then come back.</p>
 </div>
 <script>
   window.noTerminal = () => {
@@ -28,5 +29,14 @@
     document.getElementById("auto").style.display = "";
     document.getElementById("open").style.display = "none";
   }
-  setInterval(() => { if (AmalgamApp.isUp()) AmalgamApp.goHome(); }, 1500);
+  const began = Date.now();
+  const say = ["Starting Linux in the Terminal…", "Linux is up. Starting AI Amalgam…"];
+  function tick() {
+    const st = AmalgamApp.stage ? AmalgamApp.stage() : (AmalgamApp.isUp() ? 2 : 0);
+    if (st === 2) { AmalgamApp.goHome(); return; }
+    document.getElementById("stage").textContent = say[st] || say[0];
+    if (Date.now() - began > 60000) document.getElementById("slow").style.display = "";
+    setTimeout(tick, 1000);
+  }
+  tick();
 </script></body></html>

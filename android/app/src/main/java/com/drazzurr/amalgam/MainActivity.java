@@ -23,6 +23,8 @@ import android.webkit.WebViewClient;
 
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.net.URL;
+import java.net.HttpURLConnection;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
@@ -127,13 +129,33 @@ public class MainActivity extends Activity {
         return true;
     }
 
-    static boolean amalgamUp() {
+    /** 0 = nothing on the port yet (Linux still starting), 1 = the port answers but AI Amalgam
+     *  doesn't yet (the Terminal forwards the port as soon as Linux boots), 2 = AI Amalgam is up. */
+    static int amalgamStage() {
         try (Socket sock = new Socket()) {
             sock.connect(new InetSocketAddress("127.0.0.1", 8765), 700);
-            return true;
         } catch (Exception e) {
-            return false;
+            return 0;
         }
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(HOME + "manifest.webmanifest").openConnection();
+            c.setConnectTimeout(1000);
+            c.setReadTimeout(2000);
+            c.setUseCaches(false);
+            if (c.getResponseCode() != 200) return 1;
+            try (InputStream in = c.getInputStream()) {
+                return new String(ProxyService.readAll(in), StandardCharsets.UTF_8).contains("AI Amalgam") ? 2 : 1;
+            }
+        } catch (Exception e) {
+            return 1;
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    static boolean amalgamUp() {
+        return amalgamStage() == 2;
     }
 
     private void loadOrStart() {
@@ -281,6 +303,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String returnInfo() {
             return ProxyService.prefs(MainActivity.this).getString("return_log", "");
+        }
+
+        @JavascriptInterface
+        public int stage() {
+            return amalgamStage();
         }
 
         @JavascriptInterface

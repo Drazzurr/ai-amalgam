@@ -10,10 +10,13 @@ export DISABLE_AUTOUPDATER=1          # model tools change only when you choose 
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN OPENAI_API_KEY CODEX_API_KEY   # stay on your subscriptions
 PORT=8765
 running() { curl -s -o /dev/null -m 2 "http://127.0.0.1:$PORT/manifest.webmanifest"; }
+svc() { [ -f /etc/systemd/system/ai-amalgam.service ] && [ -d /run/systemd/system ]; }
 code() { python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/AIAmalgam/phone.json')))['code'])" 2>/dev/null; }
 case "${1:-}" in
   stop)
-    pkill -f "app.py --phone" && echo "AI Amalgam stopped." || echo "It wasn't running."; exit 0 ;;
+    svc && sudo -n systemctl stop ai-amalgam 2>/dev/null
+    pkill -f "app.py --phone"
+    running && echo "It's still closing; give it a few seconds." || echo "AI Amalgam stopped."; exit 0 ;;
   log)
     tail -n 40 "$APP/amalgam.log"; exit 0 ;;
   repair)
@@ -33,7 +36,14 @@ esac
 quiet=""; [ "${1:-}" = "--quiet" ] && quiet=1
 if ! running; then
   cd "$APP" || { echo "AI Amalgam isn't installed. Run: amalgam repair"; exit 1; }
-  setsid nohup python3 app.py --phone >/dev/null 2>&1 < /dev/null &
+  started=""
+  if svc; then      # Linux runs it as a service (it also starts by itself when the Terminal boots)
+    sudo -n systemctl reset-failed ai-amalgam 2>/dev/null
+    sudo -n systemctl start ai-amalgam 2>/dev/null && started=1
+  fi
+  if [ -z "$started" ]; then
+    setsid nohup python3 app.py --phone >/dev/null 2>&1 < /dev/null &
+  fi
   for i in $(seq 1 30); do running && break; sleep 0.5; done
 fi
 if running; then

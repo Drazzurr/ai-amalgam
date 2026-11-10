@@ -409,6 +409,30 @@ class App:
     def quit(self):
         self.quit_event.set()
 
+    def relaunch(self):
+        """Start again after an update. Under the phone's Linux service, systemd brings us back
+        by itself; a copy started by hand hands over to the service when there is one."""
+        if self.phone and not self.args.demo:
+            import phoneservice
+            if phoneservice.under_service():
+                return
+            if phoneservice.installed() and os.environ.get("AMALGAM_NO_HANDOVER") != "1":
+                phoneservice.hand_over(APP_DIR)
+                return
+        self.updater.restart_later(self.args_list)
+
+    def _setup_service(self):
+        """Phone: make Linux start AI Amalgam at boot, so the app never waits on a Terminal window."""
+        import phoneservice
+        ok, msg = phoneservice.ensure(APP_DIR)
+        print("Linux service:", msg if ok else "not set up (" + msg + ")")
+        if ok and not phoneservice.under_service() and os.environ.get("AMALGAM_NO_HANDOVER") != "1":
+            # started by hand (Terminal / older version): let the service take over now, so the
+            # next restart, crash or reboot is handled by Linux itself
+            print("Handing over to the Linux service")
+            phoneservice.hand_over(APP_DIR)
+            self.quit()
+
     def check_update(self):
         if self.update.get("state") in ("checking", "installing"):
             return
@@ -433,7 +457,7 @@ class App:
                 old = self.updater.rollback()
                 print("Went back to version", old)
                 self.update = dict(self.update, state="restarting", installed=old)
-                self.updater.restart_later(self.args_list)
+                self.relaunch()
                 time.sleep(1.5)
                 self.quit()
             except Exception as e:
@@ -451,7 +475,7 @@ class App:
                 new = self.updater.install()
                 print("Installed version", new)
                 self.update = dict(self.update, state="restarting", installed=new)
-                self.updater.restart_later(self.args_list)
+                self.relaunch()
                 time.sleep(1.5)
                 self.quit()
             except Exception as e:
@@ -1055,6 +1079,10 @@ class App:
                         app.sync.device = name
                 elif path == "/api/quit":
                     self._json({"ok": True})
+                    if app.phone and not app.args.demo:
+                        import phoneservice
+                        if phoneservice.under_service():
+                            phoneservice.stop_for_good()
                     app.quit()
                     return
                 elif path == "/api/bye":
@@ -1119,7 +1147,17 @@ class App:
 
         if self.phone:
             self._refresh_launcher()
+            if not self.args.demo and sys.platform.startswith("linux"):
+                threading.Thread(target=self._setup_service, daemon=True).start()
             print(f"Phone mode: open Chrome at http://localhost:{self.port}  - pairing code {self.pair_code}")
+        if sys.platform != "win32":
+            # "please stop" from Linux (systemctl stop, shutdown, `amalgam stop`): close properly,
+            # so the final sync and the clean-up still happen
+            import signal
+            try:
+                signal.signal(signal.SIGTERM, lambda *_: self.quit())
+            except (ValueError, OSError):
+                pass
         try:
             if self.args.no_open or self.phone:
                 self.quit_event.wait()
