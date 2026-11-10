@@ -51,6 +51,26 @@ public class ProxyService extends Service {
 
     private static volatile String token;
     static volatile long waitingSince = 0;     // we opened the Terminal and are waiting for Amalgam to start
+    static final long WAIT_FOR = 10 * 60 * 1000;   // a cold Linux start plus an update can take minutes
+
+    /** Remember that we opened the Terminal, on disk too: Android often closes this app while
+     *  the Terminal's Linux system starts, and an in-memory note would be lost with it. */
+    static void startWaiting(Context c) {
+        waitingSince = System.currentTimeMillis();
+        prefs(c).edit().putLong("waiting_since", waitingSince).apply();
+        log(c, "opened the Terminal; waiting for AI Amalgam");
+    }
+
+    static void stopWaiting(Context c) {
+        waitingSince = 0;
+        prefs(c).edit().putLong("waiting_since", 0).apply();
+    }
+
+    /** One line about the last return attempt, shown in Info so a failure can be explained. */
+    static void log(Context c, String what) {
+        String t = new java.text.SimpleDateFormat("h:mm:ss a", Locale.US).format(new java.util.Date());
+        prefs(c).edit().putString("return_log", t + " " + what).apply();
+    }
     private static volatile ProxyService instance;
 
     private final ExecutorService pool = Executors.newCachedThreadPool();
@@ -151,17 +171,58 @@ public class ProxyService extends Service {
         getSystemService(NotificationManager.class).notify(id, n);
     }
 
-    /** Amalgam is running: return to the app (needs "Display over other apps"), or offer a tap. */
+    /** Amalgam is running: return to the app (needs "Display over other apps"), or offer a tap.
+     *  Newer Android only lets an app come forward on its own while it shows a window, so a
+     *  tiny overlay is put up for a moment around the jump. */
     private void comeBack() {
-        if (Settings.canDrawOverlays(this)) {
-            try {
-                startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP));
-                return;
-            } catch (Exception ignored) {
-            }
+        if (!Settings.canDrawOverlays(this)) {
+            log(this, "AI Amalgam started, but auto-return is off, so a notification was shown instead");
+            notifyUser(ID_READY, "AI Amalgam is running. Tap to open it.");
+            return;
         }
-        notifyUser(ID_READY, "AI Amalgam is running. Tap to open it.");
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        main.post(() -> {
+            android.view.WindowManager wm = getSystemService(android.view.WindowManager.class);
+            android.view.View dot = new android.view.View(this);
+            dot.setBackgroundColor(0x01000000);
+            android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams(
+                    1, 1, android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT);
+            lp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+            boolean shown = false;
+            try {
+                wm.addView(dot, lp);
+                shown = true;
+            } catch (Exception e) {
+                log(this, "couldn't show the helper window: " + e.getClass().getSimpleName());
+            }
+            final boolean added = shown;
+            // give the window a moment to become visible before asking to come forward
+            main.postDelayed(() -> {
+                try {
+                    startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+                } catch (Exception e) {
+                    log(this, "Android refused the return: " + e.getClass().getSimpleName());
+                    notifyUser(ID_READY, "AI Amalgam is running. Tap to open it.");
+                }
+                // check it worked; if Android silently blocked it, fall back to a notification
+                main.postDelayed(() -> {
+                    if (added) {
+                        try { wm.removeView(dot); } catch (Exception ignored) { }
+                    }
+                    if (MainActivity.visible) {
+                        log(this, "AI Amalgam started and the app came back by itself");
+                    } else {
+                        log(this, "AI Amalgam started, but Android blocked the return" + (added ? "" : " (no helper window)")
+                                + ", so a notification was shown");
+                        notifyUser(ID_READY, "AI Amalgam is running. Tap to open it.");
+                    }
+                }, 2500);
+            }, added ? 300 : 0);
+        });
     }
 
     static void cancelReadyNotice(Context c) {
@@ -175,7 +236,12 @@ public class ProxyService extends Service {
         String last = null;
         boolean wasUp = MainActivity.amalgamUp();
         while (!stopping) {
-            boolean waiting = waitingSince > 0 && System.currentTimeMillis() - waitingSince < 180000;
+            if (waitingSince == 0) waitingSince = prefs(this).getLong("waiting_since", 0);
+            boolean waiting = waitingSince > 0 && System.currentTimeMillis() - waitingSince < WAIT_FOR;
+            if (waitingSince > 0 && !waiting) {
+                stopWaiting(this);
+                log(this, "gave up: AI Amalgam didn't start within 10 minutes");
+            }
             try {
                 Thread.sleep(waiting ? 700 : 3000);      // check often while the Terminal is starting it
             } catch (InterruptedException e) {
@@ -183,8 +249,9 @@ public class ProxyService extends Service {
             }
             boolean up = MainActivity.amalgamUp();
             if (up && waiting) {
-                waitingSince = 0;
-                if (!MainActivity.visible) comeBack();
+                stopWaiting(this);
+                if (MainActivity.visible) log(this, "AI Amalgam started; you were already back in the app");
+                else comeBack();
             }
             wasUp = up;
             if (!up || token == null) continue;

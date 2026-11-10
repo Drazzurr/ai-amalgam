@@ -1571,7 +1571,7 @@ function renderAppCard(s) {
   if (!PHONE) { $("appCard").style.display = "none"; return; }
   const cur = s.update && s.update.current, mine = APP ? APP.version() : null;
   const sig = JSON.stringify([cur, mine, s.network && s.network.via, APP && APP.keepAliveState ? APP.keepAliveState() : 0,
-    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0]);
+    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0]);
   if (sig === appSig) return; appSig = sig;
   $("appCard").style.display = "";
   if (!APP) {
@@ -1589,7 +1589,8 @@ function renderAppCard(s) {
            ${String(APP.keepAliveState()).startsWith("failed") ? `<p class="syncerr">${esc(APP.keepAliveState().slice(8))}</p>` : ""}
            <div class="btnrow"><button class="btn go" id="keepAlive">Set up keep-running</button></div>`) : ""}
       ${APP.canAutoReturn && !APP.canAutoReturn() ? `<p class="help">Auto-return is off, so after the app opens the Terminal you have to switch back yourself.</p>
-        <div class="btnrow"><button class="btn" id="autoReturn">Turn on auto-return</button></div>` : ""}`;
+        <div class="btnrow"><button class="btn" id="autoReturn">Turn on auto-return</button></div>` : ""}
+      ${APP.returnInfo && APP.returnInfo() ? `<p class="help">Last Terminal start: ${esc(APP.returnInfo())}</p>` : ""}`;
   }
   $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
   if ($("autoReturn")) $("autoReturn").onclick = () => { APP.askAutoReturn(); appSig = ""; };

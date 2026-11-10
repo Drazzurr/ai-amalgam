@@ -175,7 +175,7 @@ public class MainActivity extends Activity {
             web.evaluateJavascript("window.noTerminal && window.noTerminal()", null);
             return;
         }
-        ProxyService.waitingSince = System.currentTimeMillis();
+        ProxyService.startWaiting(this);
         startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
@@ -276,6 +276,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String keepAliveState() {
             return KeepAlive.done(MainActivity.this) ? "done" : KeepAlive.status;
+        }
+
+        @JavascriptInterface
+        public String returnInfo() {
+            return ProxyService.prefs(MainActivity.this).getString("return_log", "");
         }
 
         @JavascriptInterface
