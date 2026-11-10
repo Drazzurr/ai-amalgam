@@ -2,8 +2,9 @@ plugins {
     id 'com.android.application'
 }
 
-// version comes from the app's VERSION file, e.g. 1.8.0 -> versionCode 10800
-def appVersion = file("../../VERSION").text.trim()
+// the Android app has its own version (android/VERSION), e.g. 1.9.6 -> versionCode 10906.
+// It only changes when the app itself changes, so you're not asked to update it for every release.
+def appVersion = file("../VERSION").text.trim()
 def parts = appVersion.tokenize('.').collect { it as int }
 def code = parts[0] * 10000 + parts[1] * 100 + parts[2]
 

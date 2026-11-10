@@ -71,7 +71,6 @@ final class KeepAlive {
                 "cmd appops set " + TERMINAL + " RUN_ANY_IN_BACKGROUND allow",
                 "cmd appops set " + me + " RUN_ANY_IN_BACKGROUND allow",
                 "cmd appops set " + me + " SYSTEM_ALERT_WINDOW allow",
-                "cmd appops set " + me + " REQUEST_INSTALL_PACKAGES allow",
         };
     }
 

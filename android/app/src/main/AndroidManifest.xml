@@ -9,11 +9,6 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- "Display over other apps": lets AI Amalgam come back by itself after it opens the Terminal -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- the app keeps itself up to date (you allow "Install unknown apps" for it once) -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
-    <!-- start the connection helper again after the phone restarts or the app updates -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- lets the app open Android's Terminal app (which runs AI Amalgam's Linux system) -->
     <queries>
@@ -43,19 +38,6 @@
         <receiver
             android:name=".KeepAlive$CodeReceiver"
             android:exported="false" />
-
-        <receiver
-            android:name=".AppUpdater$Done"
-            android:exported="false" />
-
-        <receiver
-            android:name=".AppUpdater$Started"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
 
         <service
             android:name=".ProxyService"

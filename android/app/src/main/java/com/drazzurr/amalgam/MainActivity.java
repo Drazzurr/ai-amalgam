@@ -301,28 +301,6 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean canAutoUpdate() {
-            return AppUpdater.allowed(MainActivity.this);
-        }
-
-        @JavascriptInterface
-        public void askAutoUpdate() {
-            runOnUiThread(() -> {
-                try {
-                    startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                            Uri.parse("package:" + getPackageName())));
-                } catch (Exception e) {
-                    startActivity(new Intent(Settings.ACTION_SETTINGS));
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public String appUpdateInfo() {
-            return AppUpdater.lastLog(MainActivity.this);
-        }
-
-        @JavascriptInterface
         public String returnInfo() {
             return ProxyService.prefs(MainActivity.this).getString("return_log", "");
         }

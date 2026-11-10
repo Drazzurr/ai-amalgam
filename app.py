@@ -422,6 +422,14 @@ class App:
         self.server = self._listen(self.port, 30)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
+    def android_version(self):
+        """Newest version of the Android app (it has its own version number)."""
+        try:
+            with open(os.path.join(APP_DIR, "android", "VERSION"), encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
     def set_device_name(self, name):
         """Tell the models which device you're using (stored with each message you send)."""
         from orchestrator import device_tag
@@ -825,6 +833,7 @@ class App:
                     state["update"] = dict(app.update, rollback=app.updater.last_backup()[1])
                     state["notify"] = app.store.get_setting("notify", "1") == "1"
                     state["auto_update"] = app.store.get_setting("auto_update", "1") == "1"
+                    state["app_latest"] = app.android_version()
                     state["check_questions"] = app.orch.check_questions
                     state["skills"] = list_skills()
                     state["skills_off"] = app.orch.skills_off()

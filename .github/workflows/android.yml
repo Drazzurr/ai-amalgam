@@ -5,7 +5,7 @@ name: Android app
 on:
   push:
     branches: [main]
-    paths: ["android/**", "VERSION", ".github/workflows/android.yml"]
+    paths: ["android/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -55,14 +55,14 @@ jobs:
         run: |
           gh release delete android --cleanup-tag -y || true
           gh release create android AI-Amalgam.apk --target "$GITHUB_SHA" --latest=false \
-            --title "AI Amalgam for Android ($(cat VERSION))" \
+            --title "AI Amalgam for Android ($(cat android/VERSION))" \
             --notes "Install on your Pixel: open this page on the phone, tap AI-Amalgam.apk, then Install. Built from $GITHUB_SHA."
 
       - name: Save the build log (for fixing problems)
         if: always()
         run: |
           mkdir -p /tmp/log && cp "$RUNNER_TEMP/build.log" /tmp/log/build.log 2>/dev/null || echo "no log" > /tmp/log/build.log
-          echo "${{ job.status }} $(cat VERSION) $GITHUB_SHA" > /tmp/log/result.txt
+          echo "${{ job.status }} $(cat android/VERSION) $GITHUB_SHA" > /tmp/log/result.txt
           cd /tmp/log && git init -q && git checkout -q -b android-build-log
           git -c user.name=ci -c user.email=ci@localhost add -A
           git -c user.name=ci -c user.email=ci@localhost commit -q -m "build log $GITHUB_SHA"

@@ -1574,10 +1574,9 @@ function newer(a, b) {   // is version a newer than b?
 let appSig = "";
 function renderAppCard(s) {
   if (!PHONE) { $("appCard").style.display = "none"; return; }
-  const cur = s.update && s.update.current, mine = APP ? APP.version() : null;
+  const cur = s.app_latest || null, mine = APP ? APP.version() : null;   // the app has its own version
   const sig = JSON.stringify([cur, mine, s.network && s.network.via, APP && APP.keepAliveState ? APP.keepAliveState() : 0,
-    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0,
-    APP && APP.canAutoUpdate ? APP.canAutoUpdate() : 0, APP && APP.appUpdateInfo ? APP.appUpdateInfo() : 0]);
+    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0, s.app_latest]);
   if (sig === appSig) return; appSig = sig;
   $("appCard").style.display = "";
   if (!APP) {
@@ -1587,11 +1586,8 @@ function renderAppCard(s) {
   } else {
     const via = s.network && s.network.via === "app";
     $("appBody").innerHTML = `<p class="help" style="margin:0">App ${esc(mine)}${via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
-      ${APP.canAutoUpdate ? (APP.canAutoUpdate()
-        ? `<p class="help">App updates: <b>automatic</b>. It updates itself in the background when you're not using it.${APP.appUpdateInfo() ? " Last: " + esc(APP.appUpdateInfo()) + "." : ""}</p>`
-        : `<p class="help"><b>Automatic app updates</b> (one-time): on the next screen, switch on <b>Allow from this source</b>, then press Back.</p>
-           <div class="btnrow"><button class="btn go" id="autoAppUpd">Turn on automatic app updates</button></div>`) : ""}
-      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn${APP.canAutoUpdate && APP.canAutoUpdate() ? "" : " go"}" data-ext="${APK_URL}">Update the app to ${esc(cur)} now</button></div>` : ""}
+      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>
+        <p class="help">The app only needs updating now and then; AI Amalgam itself updates automatically.</p>` : ""}
       ${APP.keepAliveSetup ? (APP.keepAliveState() === "done"
         ? `<p class="help">Keep running in the background: <b>on</b>. Android lets the Terminal and this app keep going.</p>`
         : `<p class="help"><b>Keep running in the background</b> (one-time, about 2 minutes): stops Android from closing the Terminal, so AI Amalgam is usually already running when you open it.
@@ -1605,7 +1601,6 @@ function renderAppCard(s) {
   $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
   if ($("autoReturn")) $("autoReturn").onclick = () => { APP.askAutoReturn(); appSig = ""; };
   if ($("keepAlive")) $("keepAlive").onclick = () => { APP.keepAliveSetup(); appSig = ""; };
-  if ($("autoAppUpd")) $("autoAppUpd").onclick = () => { APP.askAutoUpdate(); appSig = ""; };
 }
 
 // ---------- sync card ----------
