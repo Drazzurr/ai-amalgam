@@ -1,0 +1,26 @@
+name: Fetch terminal display (xterm.js)
+# One-time helper: downloads xterm.js (MIT license) and puts it on the 'vendor' branch.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/vendor-xterm.yml"]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          mkdir out && cd out
+          npm pack @xterm/xterm@5.5.0 @xterm/addon-fit@0.10.0 >/dev/null
+          mkdir x f && tar -xzf xterm-xterm-5.5.0.tgz -C x && tar -xzf xterm-addon-fit-0.10.0.tgz -C f
+          mkdir -p ui/vendor
+          cp x/package/lib/xterm.js ui/vendor/xterm.js
+          cp x/package/css/xterm.css ui/vendor/xterm.css
+          cp x/package/LICENSE ui/vendor/XTERM-LICENSE
+          cp f/package/lib/addon-fit.js ui/vendor/addon-fit.js
+          rm -rf x f *.tgz
+          git init -q && git checkout -q -b vendor
+          git -c user.name=ci -c user.email=ci@localhost add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "xterm.js 5.5.0 + fit addon 0.10.0"
+          git push -f -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" vendor
