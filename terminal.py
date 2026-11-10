@@ -18,6 +18,31 @@ import time
 KEEP = 512 * 1024
 
 
+def _hang_up_session(sid):
+    """Like closing a terminal window: send a hangup to every job the shell started.
+    Background jobs get their own process groups, so signalling only the shell's group
+    would leave them running (and holding the terminal open)."""
+    groups = {sid}
+    try:
+        for name in os.listdir("/proc"):
+            if name.isdigit():
+                try:
+                    with open(f"/proc/{name}/stat") as f:
+                        fields = f.read().rsplit(")", 1)[1].split()
+                    if int(fields[3]) == sid:      # field 6 (session) after pid and comm
+                        groups.add(int(fields[2]))   # field 5 (process group)
+                except (OSError, ValueError, IndexError):
+                    pass
+    except OSError:
+        pass
+    for g in groups:
+        for sig in (signal.SIGHUP, signal.SIGCONT):
+            try:
+                os.killpg(g, sig)
+            except OSError:
+                pass
+
+
 class Terminal:
     def __init__(self, home=None):
         self.home = home or os.path.expanduser("~")
@@ -44,6 +69,14 @@ class Terminal:
             env.pop("LINES", None)
             pid, fd = pty.fork()
             if pid == 0:                                   # the shell
+                # The app is started with "nohup ... &" (and Python ignores SIGPIPE), so these
+                # arrive ignored; without a reset Ctrl+C would do nothing in the Terminal tab.
+                for sig in (signal.SIGINT, signal.SIGQUIT, signal.SIGHUP, signal.SIGPIPE,
+                            signal.SIGTERM, signal.SIGTSTP, signal.SIGTTIN, signal.SIGTTOU):
+                    try:
+                        signal.signal(sig, signal.SIG_DFL)
+                    except (OSError, ValueError):
+                        pass
                 try:
                     os.chdir(self.home)
                 except OSError:
@@ -53,7 +86,9 @@ class Terminal:
             self.started_at = time.time()
             self._resize(cols, rows)
             self._append(b"\r\n\x1b[90m[AI Amalgam terminal started]\x1b[0m\r\n")
-            threading.Thread(target=self._reader, args=(fd, pid), daemon=True).start()
+            reader = threading.Thread(target=self._reader, args=(fd, pid), daemon=True)
+            reader.start()
+            threading.Thread(target=self._waiter, args=(pid, reader), daemon=True).start()
 
     def restart(self, cols=80, rows=24):
         self.stop()
@@ -61,19 +96,13 @@ class Terminal:
 
     def stop(self):
         with self._lock:
-            pid, fd = self.pid, self.fd
+            pid = self.pid
             self.alive = False
             self.pid = self.fd = None
         if pid:
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGHUP)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
-        if fd is not None:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
+            _hang_up_session(pid)
+        # The handle is closed by its own reader once the shell's side shuts. Closing it
+        # here would let the next shell reuse the same number under the old reader.
 
     def _reader(self, fd, pid):
         while True:
@@ -84,11 +113,19 @@ class Terminal:
             if not data:
                 break
             with self._lock:
-                self._append(data)
+                if self.pid == pid:          # late output from a shell that was replaced is dropped
+                    self._append(data)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _waiter(self, pid, reader):
         try:
             os.waitpid(pid, 0)
         except ChildProcessError:
             pass
+        reader.join(1.5)                     # let its last words reach the screen
         with self._lock:
             if self.pid == pid:
                 self.alive = False

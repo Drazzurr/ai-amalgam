@@ -241,5 +241,8 @@ class Checkpoints:
                 full = inside(work_tree, rel)
                 if full and os.path.isfile(full):
                     os.remove(full)
-            self._git(project_id, work_tree, "checkout", target, "--", ".")
+            # An empty checkpoint (a brand-new folder) has nothing to check out, and
+            # "checkout -- ." would fail on it; removing the added files was the whole undo.
+            if self._git(project_id, work_tree, "ls-tree", "--name-only", target).strip():
+                self._git(project_id, work_tree, "checkout", target, "--", ".")
         return self.checkpoint(project_id, work_tree, "after undo")
