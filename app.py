@@ -323,6 +323,7 @@ class App:
         from sync import Sync
         device = self.store.get_setting("device_name") or ("Phone" if self.phone else "PC")
         self.sync = Sync(self.store, DATA_DIR, WORKSPACE, device)
+        self.set_device_name(device)
         self.sync.busy_check = lambda: self.orch.status == "running"
         self.sync.busy_ids = lambda: (self.orch.chat_id, self.orch.project_id)
         self.sync.on_imported = self._after_import
@@ -408,6 +409,11 @@ class App:
 
     def quit(self):
         self.quit_event.set()
+
+    def set_device_name(self, name):
+        """Tell the models which device you're using (stored with each message you send)."""
+        from orchestrator import device_tag
+        self.orch.device = device_tag("phone" if self.phone else "pc", name.replace("|", "/"))
 
     def relaunch(self):
         """Start again after an update. Under the phone's Linux service, systemd brings us back
@@ -1041,6 +1047,7 @@ class App:
                     if name:
                         app.store.set_setting("device_name", name)
                         app.sync.device = name
+                        app.set_device_name(name)
                     return self._json({"ok": True, "repo": full})
                 elif path.startswith("/api/term/"):
                     if not app.term:
@@ -1077,6 +1084,7 @@ class App:
                     if name:
                         app.store.set_setting("device_name", name)
                         app.sync.device = name
+                        app.set_device_name(name)
                 elif path == "/api/quit":
                     self._json({"ok": True})
                     if app.phone and not app.args.demo:

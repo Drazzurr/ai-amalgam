@@ -18,6 +18,7 @@ MENTION_RE = re.compile(r"@(claude|gpt|chatgpt|codex|all)\b", re.IGNORECASE)
 
 PROMPT_TEMPLATE = """You are {name}, one of several AI participants in a group discussion run by the AI Amalgam app.
 Participants: you ({name}), {others}, and the user (the human who leads and makes the decisions).
+{device}
 
 How this works:
 - The transcript below shows everything said so far. Each message is tagged with its speaker.
@@ -103,9 +104,31 @@ Write an updated summary of under 350 words in plain bullet points. Keep: the us
 
 Last line must be exactly: DONE"""
 
+DEVICE_PHONE = ("Device: the user is on their phone{name} right now (Android). AI Amalgam, you and every command run "
+                "inside the phone's Linux Terminal (a Debian Linux system), so use bash and Linux paths. The user's PC, "
+                "its files and Windows programs (like Blender) aren't reachable from here. The screen is small: prefer "
+                "short paragraphs and lists over wide tables or long code dumps unless they asked for them.")
+DEVICE_PC = "Device: the user is on their {os} PC{name} right now."
+DEVICE_MOVED = (" Earlier messages in this chat were sent from their {other}. Anything that exists only on the {other} "
+                "(files, programs, open windows) may not be reachable now, and work done there may still be syncing.")
+
+
+def device_tag(kind, name=""):
+    """What's stored with each of your messages: "phone|Pixel" or "pc|Desk"."""
+    return f"{kind}|{name}".rstrip("|")
+
+
+def device_kind(tag):
+    return (tag or "").split("|", 1)[0]
+
+
+def device_words(kind):
+    return {"phone": "phone", "pc": "PC"}.get(kind, kind or "another device")
+
+
 CODE_LINE = """
 === CODING ===
-This project has a code folder on the user's PC: {path}
+This project has a code folder on the user's {where}: {path}
 You are working inside it (it is your current folder). {role}
 - To run anything (tests, scripts, installs, git, builds), put each command on its own line just above your last line, as: RUN: <command>
   The app shows them to the user, who approves or denies them; then everyone sees the output. Commands run in {shell} in the code folder, with a {timeout}-second limit each. Don't run servers, watchers or anything interactive; tell the user how to start those instead. At most 3 commands per message. Prefer read-only checks before anything that changes the system, and never run anything destructive (deleting folders, git push, force-resets) unless the user asked for exactly that.
@@ -240,6 +263,7 @@ def split_runs(text):
 class Orchestrator:
     def __init__(self, store, runners, checkpoints=None):
         self.store = store
+        self.device = device_tag("pc")  # set by the app: which device you're using AI Amalgam on
         self.cp = checkpoints          # codework.Checkpoints, for diffs and undo in code folders
         self.pending_commands = None   # {"msg_id", "speaker", "commands"} waiting for your approval
         self.question_open = False     # a question is waiting for your answer
@@ -398,7 +422,7 @@ class Orchestrator:
             self.hint = None
             self.refresh_doc_copy()
             self._unpack_old_archives()
-            self.store.add(self.chat_id, "You", "user", text)
+            self.store.add(self.chat_id, "You", "user", text, device=self.device)
             if self.status == "running":
                 # The models will see it on their next turn.
                 return
@@ -1279,7 +1303,8 @@ class Orchestrator:
                     patch = ""
                 if patch:
                     changes = f"Latest file changes, by {c['speaker']}:\n```diff\n{patch}\n```\n"
-            doc += CODE_LINE.format(path=code_dir, role=role, changes=changes, timeout=COMMAND_TIMEOUT,
+            doc += CODE_LINE.format(where="phone (in its Linux system)" if device_kind(self.device) == "phone" else "PC",
+                                    path=code_dir, role=role, changes=changes, timeout=COMMAND_TIMEOUT,
                                     shell="Windows PowerShell" if sys.platform == "win32" else "bash")
 
         doc += ("\nTo show the user a picture (an attachment, an extracted texture, a generated image), put it in your "
@@ -1293,7 +1318,10 @@ class Orchestrator:
 
         summary, upto = self.store.summary(self.chat_id) if self.chat_id else ("", 0)
         lines = [f"[Summary of the earlier part of this conversation]:\n{summary}"] if summary else []
-        for m in self.store.messages(self.chat_id):
+        all_msgs = self.store.messages(self.chat_id) if self.chat_id else []
+        device = self._device_line(all_msgs)
+        last_dev = None
+        for m in all_msgs:
             if m["id"] <= upto:
                 continue
             if m["kind"] == "system":
@@ -1308,6 +1336,9 @@ class Orchestrator:
                 cap = 16000 if m["speaker"] == "Reader" else 4000
                 out = m["text"] if len(m["text"]) <= cap else m["text"][:cap // 2] + "\n[...]\n" + m["text"][-cap // 2:]
                 lines.append(f"[{'File read' if m['speaker'] == 'Reader' else 'Command'} result]:\n{out}")
+            elif m["kind"] == "user" and device_kind(m.get("device")) and device_kind(m.get("device")) != last_dev:
+                last_dev = device_kind(m.get("device"))      # say where it came from when that changes
+                lines.append(f"[{m['speaker']}, from their {device_words(last_dev)}]: {m['text']}")
             else:
                 lines.append(f"[{m['speaker']}]: {m['text']}")
         if self._needs_title():
@@ -1315,8 +1346,23 @@ class Orchestrator:
         off = self.skills_off()
         if off:
             doc += ("\nThe user switched these skills off here, so don't use them: " + ", ".join(off) + "\n")
-        return PROMPT_TEMPLATE.format(name=name, others=others_text, tools=tools, doc=doc, extra=extra,
-                                      transcript=self._fit(lines))
+        return PROMPT_TEMPLATE.format(name=name, others=others_text, device=device, tools=tools, doc=doc,
+                                      extra=extra, transcript=self._fit(lines))
+
+    def _device_line(self, msgs):
+        kind = device_kind(self.device)
+        dev_name = self.device.split("|", 1)[1] if "|" in self.device else ""
+        named = f" ({dev_name})" if dev_name and dev_name.lower() not in ("phone", "pc") else ""
+        if kind == "phone":
+            line = DEVICE_PHONE.format(name=named)
+        else:
+            os_name = {"win32": "Windows", "darwin": "Mac"}.get(sys.platform, "Linux")
+            line = DEVICE_PC.format(os=os_name, name=named)
+        others = [device_kind(m.get("device")) for m in msgs if m["kind"] == "user"
+                  and device_kind(m.get("device")) not in ("", kind)]
+        if others:
+            line += DEVICE_MOVED.format(other=device_words(others[-1]))
+        return line
 
     @staticmethod
     def _fit(lines):

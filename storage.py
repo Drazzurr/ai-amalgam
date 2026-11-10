@@ -34,6 +34,9 @@ class Store:
             );
             """
         )
+        mcols = {r[1] for r in self._db.execute("PRAGMA table_info(messages)")}
+        if "device" not in mcols:   # which device a message was sent from ("phone|Pixel", "pc|Desk")
+            self._db.execute("ALTER TABLE messages ADD COLUMN device TEXT NOT NULL DEFAULT ''")
         cols = {r[1] for r in self._db.execute("PRAGMA table_info(chats)")}
         if "doc_link" not in cols:
             self._db.execute("ALTER TABLE chats ADD COLUMN doc_link TEXT NOT NULL DEFAULT ''")
@@ -144,26 +147,27 @@ class Store:
             self._db.commit()
             return cur.lastrowid
 
-    def add(self, chat_id, speaker, kind, text):
+    def add(self, chat_id, speaker, kind, text, device=""):
         now = time.time()
         with self._lock:
             cur = self._db.execute(
-                "INSERT INTO messages (chat_id, speaker, kind, text, created, uid) VALUES (?, ?, ?, ?, ?, ?)",
-                (chat_id, speaker, kind, text, now, new_uid()),
+                "INSERT INTO messages (chat_id, speaker, kind, text, created, uid, device) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (chat_id, speaker, kind, text, now, new_uid(), device or ""),
             )
             self._db.execute("UPDATE chats SET updated = ? WHERE id = ?", (now, chat_id))
             self._db.execute("UPDATE projects SET updated = ? WHERE id = (SELECT project_id FROM chats WHERE id = ?)",
                              (now, chat_id))
             self._db.commit()
-            return {"id": cur.lastrowid, "speaker": speaker, "kind": kind, "text": text, "created": now}
+            return {"id": cur.lastrowid, "speaker": speaker, "kind": kind, "text": text, "created": now,
+                    "device": device or ""}
 
     def messages(self, chat_id, after=0):
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, speaker, kind, text, created FROM messages WHERE chat_id = ? AND id > ? ORDER BY id",
+                "SELECT id, speaker, kind, text, created, device FROM messages WHERE chat_id = ? AND id > ? ORDER BY id",
                 (chat_id, after),
             ).fetchall()
-        return [dict(zip(("id", "speaker", "kind", "text", "created"), r)) for r in rows]
+        return [dict(zip(("id", "speaker", "kind", "text", "created", "device"), r)) for r in rows]
 
     def count_turns(self, speaker, since):
         with self._lock:
@@ -486,7 +490,7 @@ class Store:
                 "c.summary FROM chats c LEFT JOIN projects p ON p.id = c.project_id WHERE c.uid = ?", (uid,)).fetchone()
             if not c:
                 return None
-            msgs = self._db.execute("SELECT uid, speaker, kind, text, created FROM messages WHERE chat_id = ? "
+            msgs = self._db.execute("SELECT uid, speaker, kind, text, created, device FROM messages WHERE chat_id = ? "
                                     "ORDER BY id", (c[0],)).fetchall()
             atts = self._db.execute("SELECT uid, name, path, size, created FROM attachments WHERE chat_id = ? "
                                     "ORDER BY id", (c[0],)).fetchall()
@@ -499,8 +503,10 @@ class Store:
                 return None
             return path if os.path.isabs(path) else os.path.join(workspace, *path.replace("\\", "/").split("/"))
         d["messages"] = []
-        for u, sp, k, t, cr in msgs:
+        for u, sp, k, t, cr, dev in msgs:
             x = {"uid": u, "speaker": sp, "kind": k, "text": t, "created": cr}
+            if dev:
+                x["device"] = dev
             if k == "image":
                 x["local_path"] = local(t.strip())
             d["messages"].append(x)
@@ -547,14 +553,16 @@ class Store:
                 self._db.execute("DELETE FROM messages WHERE chat_id = ?", (cid,))
                 for x in m["messages"]:
                     t = keep[x["uid"]] if x["uid"] in keep else text_of(x)
-                    self._db.execute("INSERT INTO messages (chat_id, speaker, kind, text, created, uid) "
-                                     "VALUES (?, ?, ?, ?, ?, ?)", (cid, x["speaker"], x["kind"], t, x["created"], x["uid"]))
+                    self._db.execute("INSERT INTO messages (chat_id, speaker, kind, text, created, uid, device) "
+                                     "VALUES (?, ?, ?, ?, ?, ?, ?)", (cid, x["speaker"], x["kind"], t, x["created"],
+                                                                      x["uid"], x.get("device", "")))
                 self._db.execute("UPDATE chats SET summary = '', summary_upto = 0 WHERE id = ?", (cid,))
             else:
                 for x in new:
-                    self._db.execute("INSERT INTO messages (chat_id, speaker, kind, text, created, uid) "
-                                     "VALUES (?, ?, ?, ?, ?, ?)",
-                                     (cid, x["speaker"], x["kind"], text_of(x), x["created"], x["uid"]))
+                    self._db.execute("INSERT INTO messages (chat_id, speaker, kind, text, created, uid, device) "
+                                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                     (cid, x["speaker"], x["kind"], text_of(x), x["created"], x["uid"],
+                                      x.get("device", "")))
             have_att = {u for (u,) in self._db.execute("SELECT uid FROM attachments WHERE chat_id = ?", (cid,))}
             for a in m.get("attachments", []):
                 if a["uid"] in have_att:
