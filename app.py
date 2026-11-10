@@ -307,7 +307,17 @@ class App:
         # Every request still needs the key (or the pairing code to get it).
         host = "0.0.0.0" if self.phone else "127.0.0.1"
         ThreadingHTTPServer.allow_reuse_address = True
-        self.server = ThreadingHTTPServer((host, args.port), self._handler())
+        self.server = None
+        deadline = time.time() + (120 if self.phone else 0)
+        while self.server is None:
+            try:
+                self.server = ThreadingHTTPServer((host, args.port), self._handler())
+            except OSError as e:
+                # phone: after an update the old copy may still be finishing (last sync) on the same port
+                if time.time() >= deadline:
+                    raise
+                print(f"Port {args.port} still in use ({e}); waiting for the previous copy to close...")
+                time.sleep(1)
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/#t={self.token}"
         from sync import Sync

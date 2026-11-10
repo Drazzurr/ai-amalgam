@@ -1288,7 +1288,12 @@ async function poll() {
   } catch (e) {
     if ($("pair").classList.contains("show")) return;     // waiting for the pairing code
     if (++failures >= 3) {
-      if (PHONE) { $("reconnect").classList.add("show"); setTimeout(poll, 3000); return; }   // the phone pauses it; keep trying
+      if (PHONE) {   // the phone pauses it, or it's restarting after an update; keep trying
+        const restarting = fullState.update && fullState.update.state === "restarting";
+        $("reconnect").innerHTML = restarting ? "Restarting AI Amalgam after the update… back in a moment."
+          : "Can't reach AI Amalgam. Open the <b>Terminal</b> app for a moment, then come back.";
+        $("reconnect").classList.add("show"); setTimeout(poll, restarting ? 1500 : 3000); return;
+      }
       showClosed(); return;
     }
   }
