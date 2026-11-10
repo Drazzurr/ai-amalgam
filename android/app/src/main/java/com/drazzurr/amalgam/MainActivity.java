@@ -269,6 +269,16 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void keepAliveSetup() {
+            KeepAlive.start(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public String keepAliveState() {
+            return KeepAlive.done(MainActivity.this) ? "done" : KeepAlive.status;
+        }
+
+        @JavascriptInterface
         public boolean isUp() {
             return amalgamUp();
         }

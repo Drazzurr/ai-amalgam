@@ -397,6 +397,23 @@
            opacity: 0; pointer-events: none; transition: opacity .2s; }
   .toast.show { opacity: 1; }
 
+
+  /* ---------- terminal tab ---------- */
+  .termpane { display: none; }
+  @media (max-width: 760px) {
+    .tabbar { grid-auto-flow: column; grid-auto-columns: 1fr; grid-template-columns: none !important; }
+    .termpane { position: fixed; z-index: 6; inset: 0; bottom: calc(58px + env(safe-area-inset-bottom)); background: #141517;
+                padding-top: env(safe-area-inset-top); flex-direction: column; }
+    body.tab-term .termpane { display: flex; }
+    body.tab-term main { visibility: hidden; }
+    body.typing.tab-term .termpane { bottom: 0; }
+    .termhead { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .termhead .sp { flex: 1; }
+    #termBox { flex: 1; min-height: 0; padding: 4px 2px 0 6px; }
+    .termkeys { display: flex; gap: 4px; padding: 6px; overflow-x: auto; border-top: 1px solid var(--line); background: var(--side); }
+    .termkeys button { flex: none; min-width: 44px; height: 36px; padding: 0 10px; border-radius: 8px; background: var(--raised);
+                       color: var(--ink); font: 600 13px ui-monospace, monospace; }
+  }
   /* ---------- phone layout ---------- */
   .mob { display: none; } .scrim { display: none; }
   @media (max-width: 760px) {
@@ -543,8 +560,21 @@
 <nav class="tabbar mob" id="tabbar" style="display:none">
   <button class="on" data-tab="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Chat<span class="badge" id="chatBadge"></span></button>
   <button data-tab="code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>Code</button>
+  <button data-tab="term" id="termTabBtn" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9l3 3-3 3M12.5 15H17"/></svg>Terminal</button>
   <button data-tab="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>Info<span class="badge" id="infoBadge"></span></button>
 </nav>
+<div class="termpane" id="termPane">
+  <div class="termhead"><b>Terminal</b><span class="sp"></span>
+    <button class="mini" data-run="amalgam log">Log</button>
+    <button class="mini" data-run="amalgam login">Sign in</button>
+    <button class="mini" id="termRestart">Restart</button></div>
+  <div id="termBox"></div>
+  <div class="termkeys">
+    <button data-key="\x1b">Esc</button><button data-key="\t">Tab</button><button data-key="\x03">Ctrl+C</button>
+    <button data-key="\x1b[A">↑</button><button data-key="\x1b[B">↓</button><button data-key="\x1b[D">←</button><button data-key="\x1b[C">→</button>
+    <button data-key="\r">Enter</button>
+  </div>
+</div>
 <div class="pair" id="pair"><div>
   <svg class="logo big" viewBox="0 0 140 140" aria-hidden="true"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>
   <h2>Connect this phone</h2>
@@ -1280,6 +1310,7 @@ async function poll() {
     renderSidebar(s);
     if (!lite) { renderSync(s.sync); renderAppCard(s); }
     lastCodeOk = !!(s.code && s.code.dir);
+    if (!lite) $("termTabBtn").style.display = s.terminal ? "" : "none";
     $("tabbar").querySelector('[data-tab="code"]').classList.toggle("disabled", !lastCodeOk);
     if (tab === "code" && !lastCodeOk) setTab("chat");
     if (PHONE) { $("pickCode").style.display = "none"; $("openCode").style.display = "none"; }
@@ -1434,6 +1465,8 @@ function setTab(t) {
   if (t === "code" && !lastCodeOk) t = "chat";
   tab = t;
   document.body.classList.toggle("tab-info", t === "info");
+  document.body.classList.toggle("tab-term", t === "term");
+  if (t === "term") openTerm();
   $("tabbar").querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   if (t === "chat" || t === "code") setView(t);
   if (t === "chat") $("chatBadge").classList.remove("show");
@@ -1474,6 +1507,58 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) { api("/api/sync/now", {}).catch(() => {}); failures = 0; appSig = ""; }
 });
 
+
+// ---------- terminal tab (a shell inside AI Amalgam's Linux system) ----------
+let termObj = null, termFit = null, termOffset = 0, termPolling = false;
+function loadScript(src) {
+  return new Promise((ok, bad) => { const x = document.createElement("script"); x.src = src; x.onload = ok; x.onerror = bad; document.head.appendChild(x); });
+}
+async function openTerm() {
+  try {
+    if (!termObj) {
+      const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/vendor/xterm.css"; document.head.appendChild(css);
+      await loadScript("/vendor/xterm.js"); await loadScript("/vendor/addon-fit.js");
+      termObj = new Terminal({fontSize: 13, cursorBlink: true, scrollback: 5000, allowProposedApi: false,
+        fontFamily: "ui-monospace, 'Roboto Mono', 'Droid Sans Mono', monospace",
+        theme: {background: "#141517", foreground: "#e8e9ec", cursor: "#6c8cff", selectionBackground: "#3a4560"}});
+      termFit = new FitAddon.FitAddon(); termObj.loadAddon(termFit);
+      termObj.open($("termBox"));
+      termObj.onData(d => api("/api/term/input", {data: d}).catch(() => {}));
+      new ResizeObserver(() => { if (tab === "term") fitTerm(); }).observe($("termBox"));
+    }
+    fitTerm();
+    await api("/api/term/start", {cols: termObj.cols, rows: termObj.rows});
+    if (!termPolling) termLoop();
+    setTimeout(() => termObj.focus(), 50);
+  } catch (e) { $("termBox").textContent = "The terminal couldn't open: " + e; }
+}
+let fitTimer = null;
+function fitTerm() {
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(() => {
+    try { termFit.fit(); api("/api/term/resize", {cols: termObj.cols, rows: termObj.rows}).catch(() => {}); } catch (e) {}
+  }, 60);
+}
+async function termLoop() {
+  termPolling = true;
+  while (tab === "term") {
+    try {
+      const r = await api(`/api/term/read?from=${termOffset}&wait=20`);
+      if (r.data) termObj.write(Uint8Array.from(atob(r.data), c => c.charCodeAt(0)));
+      if (typeof r.next === "number") termOffset = r.next;
+    } catch (e) { await new Promise(ok => setTimeout(ok, 1500)); }
+  }
+  termPolling = false;
+}
+$("termPane").querySelectorAll("[data-key]").forEach(b => b.onclick = () => {
+  const k = b.dataset.key.replace(/\\x([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\t/g, "\t").replace(/\\r/g, "\r");
+  api("/api/term/input", {data: k}).catch(() => {}); if (termObj) termObj.focus();
+});
+$("termPane").querySelectorAll("[data-run]").forEach(b => b.onclick = () => {
+  api("/api/term/input", {data: b.dataset.run + "\r"}).catch(() => {}); if (termObj) termObj.focus();
+});
+$("termRestart").onclick = () => { if (termObj) { termObj.reset(); api("/api/term/restart", {cols: termObj.cols, rows: termObj.rows}); } };
+
 // ---------- phone app card ----------
 const APK_URL = "https://github.com/Drazzurr/ai-amalgam/releases/download/android/AI-Amalgam.apk";
 function newer(a, b) {   // is version a newer than b?
@@ -1485,7 +1570,8 @@ let appSig = "";
 function renderAppCard(s) {
   if (!PHONE) { $("appCard").style.display = "none"; return; }
   const cur = s.update && s.update.current, mine = APP ? APP.version() : null;
-  const sig = JSON.stringify([cur, mine, s.network && s.network.via]);
+  const sig = JSON.stringify([cur, mine, s.network && s.network.via, APP && APP.keepAliveState ? APP.keepAliveState() : 0,
+    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0]);
   if (sig === appSig) return; appSig = sig;
   $("appCard").style.display = "";
   if (!APP) {
@@ -1496,11 +1582,18 @@ function renderAppCard(s) {
     const via = s.network && s.network.via === "app";
     $("appBody").innerHTML = `<p class="help" style="margin:0">App ${esc(mine)}${via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
       ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>` : ""}
+      ${APP.keepAliveSetup ? (APP.keepAliveState() === "done"
+        ? `<p class="help">Keep running in the background: <b>on</b>. Android lets the Terminal and this app keep going.</p>`
+        : `<p class="help"><b>Keep running in the background</b> (one-time, about 2 minutes): stops Android from closing the Terminal, so AI Amalgam is usually already running when you open it.
+           It uses Wireless debugging once: turn it on, tap <b>Pair device with pairing code</b>, then type the code into the notification that appears.</p>
+           ${String(APP.keepAliveState()).startsWith("failed") ? `<p class="syncerr">${esc(APP.keepAliveState().slice(8))}</p>` : ""}
+           <div class="btnrow"><button class="btn go" id="keepAlive">Set up keep-running</button></div>`) : ""}
       ${APP.canAutoReturn && !APP.canAutoReturn() ? `<p class="help">Auto-return is off, so after the app opens the Terminal you have to switch back yourself.</p>
         <div class="btnrow"><button class="btn" id="autoReturn">Turn on auto-return</button></div>` : ""}`;
   }
   $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
   if ($("autoReturn")) $("autoReturn").onclick = () => { APP.askAutoReturn(); appSig = ""; };
+  if ($("keepAlive")) $("keepAlive").onclick = () => { APP.keepAliveSetup(); appSig = ""; };
 }
 
 // ---------- sync card ----------
@@ -1914,8 +2007,17 @@ $("input").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey && !(TOUCH && !e.ctrlKey)) { e.preventDefault(); send(); }   // phone: Enter = new line
 });
 // phone: while typing, give the keyboard the tab bar's space
-$("input").addEventListener("focus", () => document.body.classList.add("typing"));
-$("input").addEventListener("blur", () => setTimeout(() => document.body.classList.remove("typing"), 120));
+function keyboardUp() {
+  const vv = window.visualViewport;
+  return !!vv && vv.height < window.screen.height * 0.72;
+}
+function updateTyping() {
+  const focused = document.activeElement === $("input") || (tab === "term" && document.activeElement && document.activeElement.closest("#termBox"));
+  document.body.classList.toggle("typing", !!focused && keyboardUp());
+}
+$("input").addEventListener("focus", () => setTimeout(updateTyping, 250));
+$("input").addEventListener("blur", () => setTimeout(updateTyping, 120));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", updateTyping);
 $("sendBtn").onclick = send;
 $("stopBtn").onclick = async () => {
   $("stopBtn").disabled = true; toast("Stopping…");
@@ -1968,7 +2070,7 @@ $("minus").onclick = () => setRounds(rounds - 1);
 $("plus").onclick = () => setRounds(rounds + 1);
 showEmpty();
 poll();
-$("input").focus();
+if (!TOUCH) $("input").focus();
 </script>
 </body>
 </html>

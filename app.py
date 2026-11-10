@@ -327,6 +327,10 @@ class App:
         self.sync.busy_ids = lambda: (self.orch.chat_id, self.orch.project_id)
         self.sync.on_imported = self._after_import
         self._sync_rev_seen = 0
+        self.term = None
+        if os.name != "nt":
+            from terminal import Terminal
+            self.term = Terminal()
         self.net = None
         if self.phone and not args.demo:
             from netwatch import NetWatch
@@ -694,10 +698,28 @@ class App:
                     return self._json({"error": "not found"}, 404)
                 if url.path == "/api/pair":
                     return self._pair(url)
+                if url.path.startswith("/vendor/"):      # third-party display code (xterm.js), no secrets
+                    name = os.path.basename(url.path)
+                    path = os.path.join(APP_DIR, "ui", "vendor", name)
+                    kinds = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
+                    ext = os.path.splitext(name)[1]
+                    if ext in kinds and os.path.isfile(path):
+                        return self._file(path, kinds[ext])
+                    return self._json({"error": "not found"}, 404)
                 if not self._token_ok(url):
                     return self._json({"error": "forbidden"}, 403)
                 if url.path == "/api/ping":
                     return self._json({"ok": True})
+                if url.path == "/api/term/read":
+                    if not app.term:
+                        return self._json({"error": "no terminal here"}, 400)
+                    q = parse_qs(url.query)
+                    try:
+                        offset = int(q.get("from", ["-1"])[0])
+                        wait = max(0.0, min(25.0, float(q.get("wait", ["20"])[0])))
+                    except ValueError:
+                        offset, wait = -1, 0.0
+                    return self._json(app.term.read(offset if offset >= 0 else 0, wait))
                 if url.path == "/api/state":
                     app.last_seen = time.time()
                     q = parse_qs(url.query)
@@ -718,6 +740,7 @@ class App:
                     state["phone"] = app.phone
                     state["sync"] = app.sync.view()
                     state["network"] = app.net.view() if app.net else None
+                    state["terminal"] = bool(app.term)
                     state["billing_vars"] = app.billing_vars
                     state["connections"] = app.connections_view()
                     app.refresh_usage(force=app.orch.turn_seq != app._last_status)
@@ -995,6 +1018,21 @@ class App:
                         app.store.set_setting("device_name", name)
                         app.sync.device = name
                     return self._json({"ok": True, "repo": full})
+                elif path.startswith("/api/term/"):
+                    if not app.term:
+                        return self._json({"error": "The terminal tab works on the phone (Linux) only."}, 400)
+                    cols, rows = data.get("cols", 80), data.get("rows", 24)
+                    if path == "/api/term/start":
+                        app.term.start(cols, rows)
+                    elif path == "/api/term/restart":
+                        app.term.restart(cols, rows)
+                    elif path == "/api/term/resize":
+                        app.term.resize(cols, rows)
+                    elif path == "/api/term/input":
+                        if not app.term.write(str(data.get("data", ""))[:65536]):
+                            return self._json({"error": "The shell isn't running. Press Restart."}, 409)
+                    else:
+                        return self._json({"error": "unknown"}, 404)
                 elif path == "/api/proxy":
                     # the AI Amalgam Android app shares the phone's internet through this proxy
                     try:
@@ -1108,6 +1146,8 @@ class App:
 
     def shutdown(self):
         print("Shutting down.")
+        if self.term:
+            self.term.stop()
         try:
             self.orch.stop()
         except Exception:
