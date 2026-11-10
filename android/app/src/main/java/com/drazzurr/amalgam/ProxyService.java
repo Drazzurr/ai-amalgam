@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.os.IBinder;
+import android.provider.Settings;
 import android.util.Base64;
 
 import org.json.JSONObject;
@@ -49,7 +50,7 @@ public class ProxyService extends Service {
     private static final int ID_RUNNING = 1, ID_UPDATE = 2, ID_READY = 3;
 
     private static volatile String token;
-    static volatile boolean wantReadyNotice = false;
+    static volatile long waitingSince = 0;     // we opened the Terminal and are waiting for Amalgam to start
     private static volatile ProxyService instance;
 
     private final ExecutorService pool = Executors.newCachedThreadPool();
@@ -150,6 +151,19 @@ public class ProxyService extends Service {
         getSystemService(NotificationManager.class).notify(id, n);
     }
 
+    /** Amalgam is running: return to the app (needs "Display over other apps"), or offer a tap. */
+    private void comeBack() {
+        if (Settings.canDrawOverlays(this)) {
+            try {
+                startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+        notifyUser(ID_READY, "AI Amalgam is running. Tap to open it.");
+    }
+
     static void cancelReadyNotice(Context c) {
         c.getSystemService(NotificationManager.class).cancel(ID_READY);
         c.getSystemService(NotificationManager.class).cancel(ID_UPDATE);
@@ -161,15 +175,16 @@ public class ProxyService extends Service {
         String last = null;
         boolean wasUp = MainActivity.amalgamUp();
         while (!stopping) {
+            boolean waiting = waitingSince > 0 && System.currentTimeMillis() - waitingSince < 180000;
             try {
-                Thread.sleep(3000);
+                Thread.sleep(waiting ? 700 : 3000);      // check often while the Terminal is starting it
             } catch (InterruptedException e) {
                 return;
             }
             boolean up = MainActivity.amalgamUp();
-            if (up && !wasUp && wantReadyNotice && !MainActivity.visible) {
-                wantReadyNotice = false;
-                notifyUser(ID_READY, "AI Amalgam is running. Tap to open it.");
+            if (up && waiting) {
+                waitingSince = 0;
+                if (!MainActivity.visible) comeBack();
             }
             wasUp = up;
             if (!up || token == null) continue;

@@ -12,12 +12,21 @@
   <svg width="84" height="84" viewBox="0 0 140 140"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>
   <h1>Starting AI Amalgam</h1>
   <p id="say">It runs inside the <b>Terminal</b> app, which is opening now. When the Terminal says it's running, come back here (or tap the notification).</p>
-  <button onclick="AmalgamApp.openTerminal()">Open Terminal</button>
+  <div id="auto" style="display:none">
+    <p style="margin-top:-6px"><b>One-time setup:</b> let AI Amalgam come back here by itself once the Terminal has started it. On the next screen, switch on <b>Allow display over other apps</b>, then press Back.</p>
+    <button onclick="AmalgamApp.askAutoReturn()">Set up auto-return</button>
+    <div style="margin-top:12px"><a href="#" style="color:#a3a6ad" onclick="AmalgamApp.skipAutoReturn();return false">Not now</a></div>
+  </div>
+  <button id="open" onclick="AmalgamApp.openTerminal()">Open Terminal</button>
   <div class="wait"><span class="dot"></span>Waiting for AI Amalgam…</div>
 </div>
 <script>
   window.noTerminal = () => {
     document.getElementById("say").innerHTML = "The Terminal app isn't on this phone yet. Turn on Settings → System → Developer options → <b>Linux development environment</b>, then set up AI Amalgam in it.";
   };
+  if (!AmalgamApp.canAutoReturn() && !AmalgamApp.askedAutoReturn()) {
+    document.getElementById("auto").style.display = "";
+    document.getElementById("open").style.display = "none";
+  }
   setInterval(() => { if (AmalgamApp.isUp()) AmalgamApp.goHome(); }, 1500);
 </script></body></html>

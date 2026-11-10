@@ -1471,7 +1471,7 @@ function askNotifyPermission() {
 }
 document.addEventListener("click", askNotifyPermission, {once: true});
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) { api("/api/sync/now", {}).catch(() => {}); failures = 0; }
+  if (!document.hidden) { api("/api/sync/now", {}).catch(() => {}); failures = 0; appSig = ""; }
 });
 
 // ---------- phone app card ----------
@@ -1495,9 +1495,12 @@ function renderAppCard(s) {
   } else {
     const via = s.network && s.network.via === "app";
     $("appBody").innerHTML = `<p class="help" style="margin:0">App ${esc(mine)}${via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
-      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>` : ""}`;
+      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>` : ""}
+      ${APP.canAutoReturn && !APP.canAutoReturn() ? `<p class="help">Auto-return is off, so after the app opens the Terminal you have to switch back yourself.</p>
+        <div class="btnrow"><button class="btn" id="autoReturn">Turn on auto-return</button></div>` : ""}`;
   }
   $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
+  if ($("autoReturn")) $("autoReturn").onclick = () => { APP.askAutoReturn(); appSig = ""; };
 }
 
 // ---------- sync card ----------

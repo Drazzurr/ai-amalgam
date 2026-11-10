@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.provider.Settings;
 import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -160,7 +161,9 @@ public class MainActivity extends Activity {
             html = "<body style='background:#1a1b1e;color:#eee;font-family:sans-serif'>Starting AI Amalgam...</body>";
         }
         web.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "utf-8", null);
-        if (openTerminalNow && System.currentTimeMillis() - terminalOpenedAt > 60000) {
+        boolean asked = ProxyService.prefs(this).getBoolean("asked_auto_return", false);
+        if (openTerminalNow && (Settings.canDrawOverlays(this) || asked)
+                && System.currentTimeMillis() - terminalOpenedAt > 60000) {
             new Handler(Looper.getMainLooper()).postDelayed(this::openTerminal, 600);
         }
     }
@@ -172,7 +175,7 @@ public class MainActivity extends Activity {
             web.evaluateJavascript("window.noTerminal && window.noTerminal()", null);
             return;
         }
-        ProxyService.wantReadyNotice = true;
+        ProxyService.waitingSince = System.currentTimeMillis();
         startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
@@ -233,6 +236,35 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void openTerminal() {
+            runOnUiThread(MainActivity.this::openTerminal);
+        }
+
+        @JavascriptInterface
+        public boolean canAutoReturn() {
+            return Settings.canDrawOverlays(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public boolean askedAutoReturn() {
+            return ProxyService.prefs(MainActivity.this).getBoolean("asked_auto_return", false);
+        }
+
+        @JavascriptInterface
+        public void askAutoReturn() {
+            ProxyService.prefs(MainActivity.this).edit().putBoolean("asked_auto_return", true).apply();
+            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+            runOnUiThread(() -> {
+                try {
+                    startActivity(i);
+                } catch (ActivityNotFoundException e) {
+                    startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void skipAutoReturn() {
+            ProxyService.prefs(MainActivity.this).edit().putBoolean("asked_auto_return", true).apply();
             runOnUiThread(MainActivity.this::openTerminal);
         }
 
