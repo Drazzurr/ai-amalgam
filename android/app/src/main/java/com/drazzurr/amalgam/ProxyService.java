@@ -247,6 +247,7 @@ public class ProxyService extends Service {
             } catch (InterruptedException e) {
                 return;
             }
+            AppUpdater.maybeUpdate(this);
             boolean up = MainActivity.amalgamUp();
             if (up && waiting) {
                 stopWaiting(this);

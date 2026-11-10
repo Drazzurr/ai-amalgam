@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # amalgam            start AI Amalgam (if it isn't running) and show how to open it
 # amalgam stop       stop it
+# amalgam restart    stop it and start it again
 # amalgam login      sign Claude and Codex in to your plans
 # amalgam repair     reinstall anything that's missing or broken (keeps your chats)
 # amalgam log        show the last lines of the log
@@ -17,6 +18,11 @@ case "${1:-}" in
     svc && sudo -n systemctl stop ai-amalgam 2>/dev/null
     pkill -f "app.py --phone"
     running && echo "It's still closing; give it a few seconds." || echo "AI Amalgam stopped."; exit 0 ;;
+  restart)
+    svc && sudo -n systemctl stop ai-amalgam 2>/dev/null
+    pkill -f "app.py --phone"
+    for i in $(seq 1 60); do running || break; sleep 1; done
+    exec "$0" ;;
   log)
     tail -n 40 "$APP/amalgam.log"; exit 0 ;;
   repair)

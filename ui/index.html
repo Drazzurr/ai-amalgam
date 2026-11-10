@@ -660,6 +660,8 @@
       <label class="switch"><input type="checkbox" id="checkQ" checked><span></span></label></div>
     <div class="toggle-row"><span>Notify me when they need me<br><small class="help" style="margin:0">Pop-up and sound when you're in another window</small></span>
       <label class="switch"><input type="checkbox" id="notifyOn" checked><span></span></label></div>
+    <div class="toggle-row"><span>Install updates automatically<br><small class="help" style="margin:0">Only when nothing is running and you've been idle a couple of minutes</small></span>
+      <label class="switch"><input type="checkbox" id="autoUpd" checked><span></span></label></div>
   </div>
   <div class="card tips" data-card="tips">
     <h3>Tips</h3>
@@ -1284,7 +1286,9 @@ async function poll() {
     // the app was updated but this page is the old copy: load the new one
     const pageV = document.querySelector('meta[name="amalgam-version"]').content;
     if (s.update && s.update.current && !pageV.startsWith("__") && s.update.current !== pageV && !sessionStorage.getItem("reloaded-" + s.update.current)) {
-      sessionStorage.setItem("reloaded-" + s.update.current, "1"); location.reload(); return;
+      sessionStorage.setItem("reloaded-" + s.update.current, "1");
+      try { sessionStorage.setItem("draft", $("input").value); } catch (e) {}   // keep what you were typing
+      location.reload(); return;
     }
     renderEdits(s.doc_edits);
     $("stopBtn").classList.toggle("show", s.status === "running");
@@ -1298,6 +1302,7 @@ async function poll() {
       renderApps(s.apps);
       notifyOn = s.notify !== false;
       if (document.activeElement !== $("notifyOn")) $("notifyOn").checked = notifyOn;
+      if (document.activeElement !== $("autoUpd")) $("autoUpd").checked = s.auto_update !== false;
       if (document.activeElement !== $("checkQ")) $("checkQ").checked = s.check_questions !== false;
       if (!collapsedLoaded && s.ui_collapsed) { collapsed = new Set(s.ui_collapsed); collapsedLoaded = true; applyCollapsed(); }
     }
@@ -1571,7 +1576,8 @@ function renderAppCard(s) {
   if (!PHONE) { $("appCard").style.display = "none"; return; }
   const cur = s.update && s.update.current, mine = APP ? APP.version() : null;
   const sig = JSON.stringify([cur, mine, s.network && s.network.via, APP && APP.keepAliveState ? APP.keepAliveState() : 0,
-    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0]);
+    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0,
+    APP && APP.canAutoUpdate ? APP.canAutoUpdate() : 0, APP && APP.appUpdateInfo ? APP.appUpdateInfo() : 0]);
   if (sig === appSig) return; appSig = sig;
   $("appCard").style.display = "";
   if (!APP) {
@@ -1581,7 +1587,11 @@ function renderAppCard(s) {
   } else {
     const via = s.network && s.network.via === "app";
     $("appBody").innerHTML = `<p class="help" style="margin:0">App ${esc(mine)}${via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
-      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>` : ""}
+      ${APP.canAutoUpdate ? (APP.canAutoUpdate()
+        ? `<p class="help">App updates: <b>automatic</b>. It updates itself in the background when you're not using it.${APP.appUpdateInfo() ? " Last: " + esc(APP.appUpdateInfo()) + "." : ""}</p>`
+        : `<p class="help"><b>Automatic app updates</b> (one-time): on the next screen, switch on <b>Allow from this source</b>, then press Back.</p>
+           <div class="btnrow"><button class="btn go" id="autoAppUpd">Turn on automatic app updates</button></div>`) : ""}
+      ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn${APP.canAutoUpdate && APP.canAutoUpdate() ? "" : " go"}" data-ext="${APK_URL}">Update the app to ${esc(cur)} now</button></div>` : ""}
       ${APP.keepAliveSetup ? (APP.keepAliveState() === "done"
         ? `<p class="help">Keep running in the background: <b>on</b>. Android lets the Terminal and this app keep going.</p>`
         : `<p class="help"><b>Keep running in the background</b> (one-time, about 2 minutes): stops Android from closing the Terminal, so AI Amalgam is usually already running when you open it.
@@ -1595,6 +1605,7 @@ function renderAppCard(s) {
   $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
   if ($("autoReturn")) $("autoReturn").onclick = () => { APP.askAutoReturn(); appSig = ""; };
   if ($("keepAlive")) $("keepAlive").onclick = () => { APP.keepAliveSetup(); appSig = ""; };
+  if ($("autoAppUpd")) $("autoAppUpd").onclick = () => { APP.askAutoUpdate(); appSig = ""; };
 }
 
 // ---------- sync card ----------
@@ -1730,6 +1741,7 @@ function renderSkills(skills, off, inProject) {
   $("skillList").querySelectorAll("[data-skill]").forEach(cb => cb.onchange = () => api("/api/skills/toggle", {name: cb.dataset.skill, on: cb.checked}));
 }
 $("notifyOn").onchange = () => api("/api/settings", {notify: $("notifyOn").checked});
+$("autoUpd").onchange = () => api("/api/settings", {auto_update: $("autoUpd").checked});
 $("checkQ").onchange = () => api("/api/settings", {check_questions: $("checkQ").checked});
 
 // ---------- apps (Blender) ----------
@@ -2003,6 +2015,15 @@ function toast(text) {
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 4500);
 }
 $("input").addEventListener("input", grow);
+// typing counts as activity, so an automatic update never restarts AI Amalgam while you write
+let lastTypePing = 0;
+$("input").addEventListener("input", () => {
+  if (Date.now() - lastTypePing > 30000) { lastTypePing = Date.now(); api("/api/ui", {}).catch(() => {}); }
+});
+try {
+  const d = sessionStorage.getItem("draft");
+  if (d) { sessionStorage.removeItem("draft"); if (!$("input").value) { $("input").value = d; grow(); } }
+} catch (e) {}
 const TOUCH = window.matchMedia("(pointer: coarse)").matches;
 $("input").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey && !(TOUCH && !e.ctrlKey)) { e.preventDefault(); send(); }   // phone: Enter = new line

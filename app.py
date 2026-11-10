@@ -283,6 +283,7 @@ class App:
         self._pair_fails = []
         self.billing_vars = billing_vars_present()
         self.quit_event = threading.Event()
+        self.last_activity = time.time()   # automatic updates wait for 2 idle minutes, even right after start
         self.started = time.time()
         self.last_seen = None      # last time the window polled
         self.bye_at = None         # when a window said it was closing
@@ -305,19 +306,10 @@ class App:
         self._load_game_folders()
         # The phone's Terminal forwards the port from its Linux system to Chrome, so listen there too.
         # Every request still needs the key (or the pairing code to get it).
-        host = "0.0.0.0" if self.phone else "127.0.0.1"
+        self._host = "0.0.0.0" if self.phone else "127.0.0.1"
+        self._handler_cls = self._handler()
         ThreadingHTTPServer.allow_reuse_address = True
-        self.server = None
-        deadline = time.time() + (120 if self.phone else 0)
-        while self.server is None:
-            try:
-                self.server = ThreadingHTTPServer((host, args.port), self._handler())
-            except OSError as e:
-                # phone: after an update the old copy may still be finishing (last sync) on the same port
-                if time.time() >= deadline:
-                    raise
-                print(f"Port {args.port} still in use ({e}); waiting for the previous copy to close...")
-                time.sleep(1)
+        self.server = self._listen(args.port, 120 if self.phone else 0)
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/#t={self.token}"
         from sync import Sync
@@ -410,6 +402,26 @@ class App:
     def quit(self):
         self.quit_event.set()
 
+    def _listen(self, port, wait):
+        deadline = time.time() + wait
+        while True:
+            try:
+                return ThreadingHTTPServer((self._host, port), self._handler_cls)
+            except OSError as e:
+                # phone: after an update the old copy may still be finishing (last sync) on the same port
+                if time.time() >= deadline:
+                    raise
+                print(f"Port {port} still in use ({e}); waiting for the previous copy to close...")
+                time.sleep(1)
+
+    def _relisten(self):
+        """Close and reopen the listening socket (same port), so the Terminal sees it start."""
+        old = self.server
+        old.shutdown()
+        old.server_close()
+        self.server = self._listen(self.port, 30)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
     def set_device_name(self, name):
         """Tell the models which device you're using (stored with each message you send)."""
         from orchestrator import device_tag
@@ -438,6 +450,40 @@ class App:
             print("Handing over to the Linux service")
             phoneservice.hand_over(APP_DIR)
             self.quit()
+
+    AUTO_CHECK_EVERY = 30 * 60      # look for a new version every half hour
+    IDLE_BEFORE_UPDATE = 120        # ...and install it once nothing has happened for 2 minutes
+
+    def idle_for_update(self):
+        o = self.orch
+        return (o.status != "running" and not o.pending_commands and getattr(o, "_cmd_proc", None) is None
+                and time.time() - getattr(self, "last_activity", 0) >= self.IDLE_BEFORE_UPDATE
+                and not (self.sync.state or {}).get("busy"))
+
+    def _auto_update_loop(self):
+        """Install new versions by itself (Info → Install updates automatically), never mid-discussion."""
+        self._last_auto_check = time.time()          # the first check runs a few seconds after start
+        while not self.quit_event.wait(60):
+            self._auto_update_step()
+
+    def _auto_update_step(self):
+        """Returns what it did: off | busy | checked | installed | waiting | nothing."""
+        if self.store.get_setting("auto_update", "1") != "1":
+            return "off"
+        u = self.update
+        if u.get("state") in ("checking", "installing", "restarting"):
+            return "busy"
+        if time.time() - self._last_auto_check >= self.AUTO_CHECK_EVERY:
+            self._last_auto_check = time.time()
+            self.check_update()
+            return "checked"
+        if u.get("available") and not u.get("error"):
+            if not self.idle_for_update():
+                return "waiting"
+            print("Installing update", u.get("latest"), "automatically")
+            self.install_update()
+            return "installed"
+        return "nothing"
 
     def check_update(self):
         if self.update.get("state") in ("checking", "installing"):
@@ -778,6 +824,7 @@ class App:
                     state["usage"] = app.usage
                     state["update"] = dict(app.update, rollback=app.updater.last_backup()[1])
                     state["notify"] = app.store.get_setting("notify", "1") == "1"
+                    state["auto_update"] = app.store.get_setting("auto_update", "1") == "1"
                     state["check_questions"] = app.orch.check_questions
                     state["skills"] = list_skills()
                     state["skills_off"] = app.orch.skills_off()
@@ -862,6 +909,8 @@ class App:
                 except json.JSONDecodeError:
                     data = {}
                 path = url.path
+                if path not in ("/api/bye", "/api/term/resize", "/api/proxy"):
+                    app.last_activity = time.time()     # automatic updates wait until you've been idle
                 if path == "/api/send":
                     app.orch.send(str(data.get("text", "")))
                 elif path == "/api/stop":
@@ -961,6 +1010,8 @@ class App:
                 elif path == "/api/settings":
                     app.orch.settings(data.get("max_rounds"), data.get("enabled"), data.get("speeds"),
                                       data.get("check_questions"), data.get("notify"))
+                    if data.get("auto_update") is not None:
+                        app.store.set_setting("auto_update", "1" if data.get("auto_update") else "0")
                 elif path == "/api/skills/toggle":
                     app.orch.set_skill(str(data.get("name", "")), bool(data.get("on")))
                 elif path == "/api/ui":
@@ -1139,6 +1190,11 @@ class App:
             json.dump({"port": self.port, "token": self.token, "pid": os.getpid()}, f)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         threading.Thread(target=self._notifier, daemon=True).start()
+        if self.phone and sys.platform.startswith("linux"):
+            from portannounce import PortAnnouncer
+            delays = tuple(int(x) for x in os.environ.get("AMALGAM_ANNOUNCE_DELAYS", "10,30").split(","))
+            self.announcer = PortAnnouncer(self._relisten, delays)
+            self.announcer.start()
         if not self.args.demo:
             threading.Thread(target=self.sync.loop, args=(self.quit_event,), daemon=True).start()
             if self.net:
@@ -1149,6 +1205,7 @@ class App:
         if not self.args.demo:
             install_skills()
             threading.Timer(6, self.check_update).start()
+            threading.Thread(target=self._auto_update_loop, daemon=True).start()
         print("AI Amalgam is running at", self.url)
         if self.billing_vars:
             print("Ignoring", ", ".join(self.billing_vars), "so you stay on your subscriptions.")
