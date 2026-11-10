@@ -101,6 +101,7 @@ class Sync:
         self.on_imported = None       # set by the app: called with the set of local chat ids changed
         self.on_network_error = None  # set by the app (phone): check and repair the connection
         self._wake = threading.Event()
+        self._hashes = {}             # path -> (size, mtime, sha1): unchanged files aren't re-read
         os.makedirs(self.root, exist_ok=True)
         if self.configured():
             self.state["state"] = "idle"
@@ -591,8 +592,8 @@ class Sync:
                                            f"(limit {MAX_CODE_FOLDER // 1_000_000} MB). Chats still sync.")
                 continue
             Rf = self._code_files(rdir)
-            Lh = {p: _sha(f) for p, f in L.items()}
-            Rh = {p: _sha(f) for p, f in Rf.items()}
+            Lh = {p: self._quick_sha(f) for p, f in L.items()}
+            Rh = {p: self._quick_sha(f) for p, f in Rf.items()}
             new_base = {}
             for p in set(Lh) | set(Rh) | set(base):
                 lh, rh, bh = Lh.get(p), Rh.get(p), base.get(p)
@@ -645,6 +646,16 @@ class Sync:
                     changed += 1
             self._pending_bases[uid] = new_base
         return changed
+
+    def _quick_sha(self, path):
+        st = os.stat(path)
+        key = (st.st_size, st.st_mtime_ns)
+        hit = self._hashes.get(path)
+        if hit and hit[0] == key:
+            return hit[1]
+        h = _sha(path)
+        self._hashes[path] = (key, h)
+        return h
 
     def _commit_bases(self):
         """Only after a successful upload do we remember what was synced."""

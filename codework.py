@@ -110,7 +110,12 @@ def _kill_tree(proc):
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
                            creationflags=NO_WINDOW, timeout=15)
         else:
-            proc.kill()
+            # the command runs in its own process group: stop it and everything it started
+            import signal
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
     except Exception:
         pass
 
@@ -126,7 +131,8 @@ def run_command(command, cwd, env=None, timeout=COMMAND_TIMEOUT, on_proc=None):
     """Run one command in the code folder. Returns (exit code or None, output, timed_out)."""
     try:
         proc = subprocess.Popen(shell_args(command), cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=NO_WINDOW,
+                                start_new_session=sys.platform != "win32")
     except OSError as e:
         return None, f"Couldn't start the command: {e}", False
     if on_proc:

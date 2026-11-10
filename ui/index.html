@@ -54,6 +54,7 @@
   .projrow .cnt { margin-left: auto; }
   .projchats button { padding-left: 34px !important; font-size: 13.5px !important; }
   @media (prefers-reduced-motion: reduce) { .projchats, .projrow .chev { transition: none; } }
+  #log > .msg { content-visibility: auto; contain-intrinsic-size: auto 140px; }
   .projchats .newin { color: var(--faint) !important; font-size: 13px !important; }
   .field.area { min-height: 92px; resize: vertical; margin-top: 8px; font-family: inherit; line-height: 1.45; }
   .crumb { color: var(--faint); font-weight: 500; }
@@ -788,7 +789,7 @@ function typingEl() {
   return t;
 }
 let streamedBy = null;   // speaker whose reply was just shown live (its final message appears without a fade)
-function addMessage(m, animate) {
+function addMessage(m, animate, bulk) {
   const log = $("log");
   const empty = log.querySelector(".empty"); if (empty) empty.remove();
   const div = document.createElement("div");
@@ -836,6 +837,7 @@ function addMessage(m, animate) {
   if (m.kind === "user") div.dataset.user = "1";
   if (animate && !(m.kind === "model" && streamedBy === m.speaker)) div.classList.add("enter");
   if (m.kind === "model" && streamedBy === m.speaker) { streamedBy = null; typingEl().classList.remove("show"); }
+  if (bulk) { log.insertBefore(div, typingEl()); return; }   // opening a chat: scroll once at the end
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
   log.insertBefore(div, typingEl());
   if (atBottom || m.kind !== "model") log.scrollTop = log.scrollHeight;
@@ -1213,9 +1215,11 @@ async function poll() {
       setAttachments(full.attachments, true);
       $("log").innerHTML = "";
       if (!full.messages.length) showEmpty(s.project_id); else typingEl();
-      full.messages.forEach(addMessage);
+      full.messages.forEach(m => addMessage(m, false, true));
       if (full.messages.length) lastId = full.messages[full.messages.length - 1].id;
-      $("log").scrollTop = $("log").scrollHeight;
+      // off-screen messages are measured lazily, so settle at the bottom over a few frames
+      const toBottom = (n) => { const l = $("log"); l.scrollTop = l.scrollHeight; if (n > 0) requestAnimationFrame(() => toBottom(n - 1)); };
+      toBottom(8);
     } else {
       setAttachments(s.attachments, false);
       s.messages.forEach(m => { addMessage(m, true); lastId = m.id; });
