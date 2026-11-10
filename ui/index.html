@@ -391,6 +391,11 @@
                z-index: 40; background: #3a2a12; border: 1px solid rgba(240,178,50,.6); color: #f3d79a; border-radius: 12px;
                padding: 9px 14px; font-size: 13.5px; box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: calc(100% - 24px); }
   .reconnect.show { display: block; }
+  .toast { position: fixed; z-index: 45; left: 50%; transform: translateX(-50%); bottom: calc(150px + env(safe-area-inset-bottom));
+           background: #2a2c31; border: 1px solid #44474e; color: var(--ink); border-radius: 12px; padding: 9px 14px;
+           font-size: 13.5px; max-width: min(440px, calc(100% - 24px)); box-shadow: 0 6px 20px rgba(0,0,0,.4);
+           opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
 
   /* ---------- phone layout ---------- */
   .mob { display: none; } .scrim { display: none; }
@@ -548,6 +553,7 @@
   <div class="err" id="pairErr"></div>
 </div></div>
 <div class="reconnect" id="netwarn"></div>
+<div class="toast" id="toast"></div>
 <div class="reconnect" id="reconnect">Can't reach AI Amalgam. Open the <b>Terminal</b> app for a moment, then come back.</div>
 
 <div class="right">
@@ -1890,7 +1896,14 @@ async function send() {
     chatId = undefined;   // reload the chat
     return;
   }
-  await api("/api/send", {text});
+  const wasRunning = lastStatus === "running";
+  const r = await api("/api/send", {text});
+  if (r && r.error) { toast(r.error); return; }
+  if (wasRunning) toast("Sent. They'll read it on their next turn. Press ■ to stop them instead.");
+}
+function toast(text) {
+  const t = $("toast"); t.textContent = text; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 4500);
 }
 $("input").addEventListener("input", grow);
 const TOUCH = window.matchMedia("(pointer: coarse)").matches;
@@ -1901,7 +1914,10 @@ $("input").addEventListener("keydown", e => {
 $("input").addEventListener("focus", () => document.body.classList.add("typing"));
 $("input").addEventListener("blur", () => setTimeout(() => document.body.classList.remove("typing"), 120));
 $("sendBtn").onclick = send;
-$("stopBtn").onclick = () => api("/api/stop", {});
+$("stopBtn").onclick = async () => {
+  $("stopBtn").disabled = true; toast("Stopping…");
+  try { await api("/api/stop", {}); toast("Stopped."); } finally { $("stopBtn").disabled = false; }
+};
 $("newBtn").onclick = () => api("/api/new", {});
 $("refreshConn").onclick = () => api("/api/refresh-connections", {});
 $("clipBtn").onclick = () => $("fileInput").click();

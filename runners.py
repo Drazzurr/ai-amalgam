@@ -417,10 +417,8 @@ class Runner:
         with self._lock:
             self._stopped = True
             if self._proc and self._proc.poll() is None:
-                try:
-                    self._proc.kill()
-                except OSError:
-                    pass
+                from codework import _kill_tree
+                _kill_tree(self._proc)
 
     def _env(self):
         env = clean_env()
@@ -440,14 +438,18 @@ class Runner:
             raise RunnerError(f"{self.name}: the '{self.exe}' command isn't installed or isn't on PATH.")
         with self._lock:
             self._stopped = False
+            # its own process group, so Stop can end the tool AND everything it started
+            # (on the phone, Codex is a small launcher that starts the real program as a second process)
             self._proc = subprocess.Popen(
                 [path] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                cwd=self.code_dir or self.workdir, env=self._env(), creationflags=NO_WINDOW)
+                cwd=self.code_dir or self.workdir, env=self._env(), creationflags=NO_WINDOW,
+                start_new_session=sys.platform != "win32")
             proc = self._proc
         err_chunks, out_lines = [], []
         reader = threading.Thread(target=lambda: err_chunks.append(proc.stderr.read()), daemon=True)
         reader.start()
-        timer = threading.Timer(TURN_TIMEOUT_SECONDS, proc.kill)
+        from codework import _kill_tree
+        timer = threading.Timer(TURN_TIMEOUT_SECONDS, _kill_tree, args=(proc,))
         timer.start()
         timed_out = False
         try:

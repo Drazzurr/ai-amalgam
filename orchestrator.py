@@ -402,10 +402,15 @@ class Orchestrator:
             if self.status == "running":
                 # The models will see it on their next turn.
                 return
-            self.status = "running"
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._loop, args=(text,), daemon=True)
-            self._thread.start()
+            self._start_run(text)
+
+    def _start_run(self, text):
+        """Start the discussion loop (called with the lock held)."""
+        self.status = "running"
+        self._stop.clear()
+        self._run_no = getattr(self, "_run_no", 0) + 1
+        self._thread = threading.Thread(target=self._loop, args=(text,), daemon=True)
+        self._thread.start()
 
     def refresh_doc_copy(self):
         """If the project doc is shared by link, keep a fresh local copy without needing any connector."""
@@ -438,10 +443,7 @@ class Orchestrator:
             if self.chat_id is None or self.status == "running":
                 return False
             self.hint = None
-            self.status = "running"
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._loop, args=("",), daemon=True)
-            self._thread.start()
+            self._start_run("")
         return True
 
     def _last_user_id(self):
@@ -552,6 +554,13 @@ class Orchestrator:
         t = self._thread
         if t and t.is_alive() and t is not threading.current_thread():
             t.join(timeout=5)
+            if t.is_alive():
+                # a tool is still shutting down; don't keep the chat stuck on "running" because of it
+                with self._lock:
+                    if self.status == "running":
+                        self.status = "idle"
+                        self.speaker = None
+                    self._run_no = getattr(self, "_run_no", 0) + 1   # the old run can't change anything now
 
     def state(self):
         return {
@@ -598,6 +607,7 @@ class Orchestrator:
             self.status = "waiting"
 
     def _loop(self, trigger_text):
+        my_run = getattr(self, "_run_no", 0)
         try:
             mentioned = {m.lower() for m in MENTION_RE.findall(trigger_text)}
             mentioned = {"gpt" if m in ("chatgpt", "codex") else m for m in mentioned}
@@ -676,9 +686,10 @@ class Orchestrator:
             self._note(f"Round limit reached ({self.max_rounds} rounds). Press Continue, or send a message, to keep going.")
         finally:
             with self._lock:
-                if self.status == "running":
-                    self.status = "idle"
-                self.speaker = None
+                if getattr(self, "_run_no", 0) == my_run:
+                    if self.status == "running":
+                        self.status = "idle"
+                    self.speaker = None
 
     def _maybe_condense(self):
         msgs = [m for m in self.store.messages(self.chat_id) if m["kind"] != "system"]
@@ -1067,9 +1078,10 @@ class Orchestrator:
             self._loop("")
         finally:
             with self._lock:
-                if self.status == "running":
-                    self.status = "idle"
-                self.speaker = None
+                if getattr(self, "_run_no", 0) == my_run:
+                    if self.status == "running":
+                        self.status = "idle"
+                    self.speaker = None
 
     def run_file(self, rel):
         """You pressed Run on a file in the Code tab: run it now (your click is the approval)."""
