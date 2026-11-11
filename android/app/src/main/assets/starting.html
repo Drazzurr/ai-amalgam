@@ -54,6 +54,7 @@
     <div style="margin-top:12px"><a href="#" onclick="AmalgamApp.skipAutoReturn();return false">Not now</a></div>
   </div>
 
+  <p class="help" id="details" style="font-size:12px;color:var(--faint)"></p>
   <div id="slow" class="hide">
     <p class="help" id="slowText">This is taking longer than usual.</p>
     <button class="quiet" onclick="AmalgamApp.openTerminal()">Open the Terminal</button>
@@ -83,8 +84,12 @@
     if (st !== last) { last = st; show(st); if (st > 0) stage0Since = Infinity; }
     if (st === 2) { show(3); setTimeout(() => AmalgamApp.goHome(), 150); return; }
     // Linux never started: try again (Terminal up longer), then show the Terminal itself
-    if (st === 0 && quiet && Date.now() - stage0Since > 45000 && retried < 2 && AmalgamApp.retryLinux) {
+    if (st === 0 && quiet && Date.now() - stage0Since > 30000 && retried < 2 && AmalgamApp.retryLinux) {
       retried++; stage0Since = Date.now(); AmalgamApp.retryLinux();
+    }
+    if (Date.now() - began > 60000 && AmalgamApp.startInfo) {
+      $("details").textContent = (st === 0 ? "Linux: not answering yet" : "Linux: up · AI Amalgam: starting")
+        + " · " + Math.round((Date.now() - began) / 1000) + " s · " + AmalgamApp.startInfo();
     }
     if (Date.now() - began > 75000) {
       $("slow").classList.remove("hide");

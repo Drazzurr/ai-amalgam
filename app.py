@@ -1230,7 +1230,18 @@ class App:
             from portannounce import PortAnnouncer
             # several tries: the earliest one usually lands as soon as the watcher is ready
             delays = tuple(int(x) for x in os.environ.get("AMALGAM_ANNOUNCE_DELAYS", "2,5,10,30").split(","))
-            self.announcer = PortAnnouncer(self._relisten, delays)
+            from portannounce import reachable_from_android
+            from netwatch import gateway
+
+            def android_can_reach_us():
+                saved = self.net.proxy if self.net else None
+                if not saved:
+                    try:
+                        saved = json.loads(self.store.get_setting("phone_proxy", "") or "null")
+                    except ValueError:
+                        saved = None
+                return reachable_from_android(gateway(), saved, self.port)
+            self.announcer = PortAnnouncer(self._relisten, delays, check=android_can_reach_us)
             self.announcer.start()
         if not self.args.demo:
             threading.Thread(target=self.sync.loop, args=(self.quit_event,), daemon=True).start()

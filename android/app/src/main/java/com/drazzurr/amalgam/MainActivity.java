@@ -217,7 +217,7 @@ public class MainActivity extends Activity {
         if (openTerminalNow && (Settings.canDrawOverlays(this) || asked)
                 && System.currentTimeMillis() - terminalOpenedAt > 60000) {
             attempts = 0;
-            new Handler(Looper.getMainLooper()).postDelayed(() -> startLinux(3000), 300);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> startLinux(5000), 300);
         }
     }
 
@@ -257,11 +257,23 @@ public class MainActivity extends Activity {
         }, 200 + terminalFor);
     }
 
-    /** Linux didn't start: try once more with the Terminal up longer, then show it as before. */
+    /** Linux didn't start: try again with the Terminal up longer; the last try shows the Terminal
+     *  (in case it needs you) but still comes back here by itself after 20 s. */
     void retryLinux() {
         attempts++;
-        if (attempts == 1) startLinux(8000);
-        else openTerminal();
+        if (attempts == 1) {
+            startLinux(10000);
+            return;
+        }
+        openTerminal();
+        ui.postDelayed(() -> {
+            if (visible) return;
+            try {
+                startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            } catch (Exception ignored) {
+            }
+        }, 20000);
     }
 
     void openTerminal() {
@@ -351,6 +363,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void retryLinux() {
             runOnUiThread(MainActivity.this::retryLinux);
+        }
+
+        @JavascriptInterface
+        public String startInfo() {
+            return "tries: " + (attempts + 1) + " · " + ProxyService.prefs(MainActivity.this).getString("return_log", "");
         }
 
         @JavascriptInterface
