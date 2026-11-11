@@ -831,7 +831,11 @@ class App:
                         app._reload_settings()
                     after = int(q.get("after", ["0"])[0] or 0)
                     state = app.orch.state()
-                    state["messages"] = app.store.messages(state["chat_id"], after) if state["chat_id"] else []
+                    tail = int(q.get("tail", ["0"])[0] or 0)
+                    if state["chat_id"] and after == 0 and tail:   # opening a chat: just the newest messages
+                        state["messages"], state["earlier"] = app.store.messages_tail(state["chat_id"], tail)
+                    else:
+                        state["messages"] = app.store.messages(state["chat_id"], after) if state["chat_id"] else []
                     state["sync_rev"] = app.sync.rev
                     if q.get("lite", ["0"])[0] == "1":   # quick refresh while models talk
                         return self._json(state)
@@ -894,6 +898,10 @@ class App:
                     self.end_headers()
                     self.wfile.write(body)
                     return
+                if url.path == "/api/older":
+                    before = int(parse_qs(url.query).get("before", ["0"])[0] or 0)
+                    msgs, left = app.store.messages_tail(app.orch.chat_id, 80, before) if app.orch.chat_id else ([], 0)
+                    return self._json({"messages": msgs, "earlier": left})
                 if url.path == "/api/search":
                     return self._json({"results": app.store.search(parse_qs(url.query).get("q", [""])[0])})
                 if url.path.startswith("/api/code/"):

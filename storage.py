@@ -169,6 +169,20 @@ class Store:
             ).fetchall()
         return [dict(zip(("id", "speaker", "kind", "text", "created", "device"), r)) for r in rows]
 
+    def messages_tail(self, chat_id, limit, before=None):
+        """The newest `limit` messages (before message id `before`, if given), oldest first,
+        plus how many older ones are left. Long chats open with just these."""
+        cols = ("id", "speaker", "kind", "text", "created", "device")
+        with self._lock:
+            cond, args = ("AND id < ?", [before]) if before else ("", [])
+            rows = self._db.execute(f"SELECT id, speaker, kind, text, created, device FROM messages "
+                                    f"WHERE chat_id = ? {cond} ORDER BY id DESC LIMIT ?",
+                                    [chat_id] + args + [limit]).fetchall()
+            rows.reverse()
+            left = self._db.execute("SELECT COUNT(*) FROM messages WHERE chat_id = ? AND id < ?",
+                                    (chat_id, rows[0][0])).fetchone()[0] if rows else 0
+        return [dict(zip(cols, r)) for r in rows], left
+
     def count_turns(self, speaker, since):
         with self._lock:
             row = self._db.execute(
