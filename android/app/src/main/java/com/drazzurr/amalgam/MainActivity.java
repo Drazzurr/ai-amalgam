@@ -160,10 +160,32 @@ public class MainActivity extends Activity {
 
     private void loadOrStart() {
         new Thread(() -> {
-            boolean up = amalgamUp();
+            int stage = amalgamStage();
             runOnUiThread(() -> {
-                if (up) goHome();
-                else showStart(true);
+                if (stage == 2) goHome();
+                else showStart(stage == 0);     // Linux already up: just wait, no Terminal needed
+            });
+        }).start();
+    }
+
+    /** The page lost AI Amalgam (or you came back and it's gone): show the loading screen and,
+     *  if Linux stopped, start it again quietly. Checks twice so a brief blip doesn't count. */
+    void reconnect() {
+        if (showingStart) return;
+        new Thread(() -> {
+            if (amalgamStage() == 2) return;
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException e) {
+                return;
+            }
+            int stage = amalgamStage();
+            if (stage == 2) return;
+            runOnUiThread(() -> {
+                if (showingStart) return;
+                // keep anything you were typing; the page puts it back once AI Amalgam is up again
+                web.evaluateJavascript("try{localStorage.setItem('amalgam_draft',"
+                        + "document.getElementById('input').value)}catch(e){}", v -> showStart(stage == 0));
             });
         }).start();
     }
@@ -262,6 +284,7 @@ public class MainActivity extends Activity {
         Cover.hideSoon(this);
         ProxyService.cancelReadyNotice(this);
         if (showingStart) loadOrStart();
+        else reconnect();          // Linux may have been stopped while you were away
     }
 
     @Override
@@ -318,6 +341,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openTerminal() {
             runOnUiThread(MainActivity.this::openTerminal);
+        }
+
+        @JavascriptInterface
+        public void reconnect() {
+            runOnUiThread(MainActivity.this::reconnect);
         }
 
         @JavascriptInterface

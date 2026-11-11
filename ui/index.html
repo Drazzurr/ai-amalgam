@@ -585,7 +585,7 @@
 </div></div>
 <div class="reconnect" id="netwarn"></div>
 <div class="toast" id="toast"></div>
-<div class="reconnect" id="reconnect">Can't reach AI Amalgam. Open the <b>Terminal</b> app for a moment, then come back.</div>
+<div class="reconnect" id="reconnect">Reconnecting to AI Amalgam…</div>
 
 <div class="right">
   <div class="infohead mob" style="display:none">Info &amp; settings</div>
@@ -1264,6 +1264,7 @@ async function poll() {
     if (lastSyncRev !== null && s.sync_rev !== lastSyncRev) chatId = undefined;   // changes arrived from the other device
     lastSyncRev = s.sync_rev;
     $("reconnect").classList.remove("show");
+    reconnectAsked = false;
     projectsById = Object.fromEntries((s.projects || []).map(p => [p.id, p]));
     const viewKey = s.chat_id + "|" + s.project_id;
     if (viewKey !== chatId) {
@@ -1357,6 +1358,14 @@ async function poll() {
     if (++failures >= 3) {
       if (PHONE) {   // the phone pauses it, or it's restarting after an update; keep trying
         const restarting = fullState.update && fullState.update.state === "restarting";
+        if (APP && APP.reconnect) {
+          // inside the app: reconnect by itself. If it stays unreachable, the app takes over with its
+          // loading screen and restarts Linux quietly when needed — you never have to open the Terminal.
+          $("reconnect").innerHTML = restarting ? "Restarting AI Amalgam after the update… back in a moment."
+            : "Reconnecting to AI Amalgam…";
+          if (!reconnectAsked && (restarting ? failures >= 40 : failures >= 5)) { reconnectAsked = true; APP.reconnect(); }
+          $("reconnect").classList.add("show"); setTimeout(poll, restarting ? 1500 : 2000); return;
+        }
         $("reconnect").innerHTML = restarting ? "Restarting AI Amalgam after the update… back in a moment."
           : "Can't reach AI Amalgam. Open the <b>Terminal</b> app for a moment, then come back.";
         $("reconnect").classList.add("show"); setTimeout(poll, restarting ? 1500 : 3000); return;
@@ -1366,7 +1375,7 @@ async function poll() {
   }
   setTimeout(poll, lastStatus === "running" ? 200 : (document.hidden && PHONE ? 3000 : 800));
 }
-let failures = 0, closing = false;
+let failures = 0, closing = false, reconnectAsked = false;
 function showClosed() {
   if (restartingNow) {
     $("closed").querySelector("h2").textContent = "Updated! AI Amalgam is restarting…";
@@ -2041,8 +2050,9 @@ $("input").addEventListener("input", () => {
   if (Date.now() - lastTypePing > 30000) { lastTypePing = Date.now(); api("/api/ui", {}).catch(() => {}); }
 });
 try {
-  const d = sessionStorage.getItem("draft");
-  if (d) { sessionStorage.removeItem("draft"); if (!$("input").value) { $("input").value = d; grow(); } }
+  const d = sessionStorage.getItem("draft") || localStorage.getItem("amalgam_draft");
+  sessionStorage.removeItem("draft"); localStorage.removeItem("amalgam_draft");
+  if (d && !$("input").value) { $("input").value = d; grow(); }
 } catch (e) {}
 const TOUCH = window.matchMedia("(pointer: coarse)").matches;
 $("input").addEventListener("keydown", e => {
