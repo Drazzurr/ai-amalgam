@@ -27,6 +27,7 @@ import urllib.request
 
 HOSTS = ("github.com", "api.anthropic.com", "chatgpt.com")
 CHECK_EVERY = 30          # seconds, while things are fine
+CHECK_EVERY_AWAY = 180    # ...and while you're not using AI Amalgam (saves battery)
 RETRY_EVERY = 10          # seconds, while broken
 FALLBACK_DNS = ("1.1.1.1", "8.8.8.8")
 
@@ -124,6 +125,7 @@ class NetWatch:
                       "gave_up": False, "via": None, "app": bool(proxy)}
         self._wake = threading.Event()
         self._last_fix = 0
+        self.away_check = lambda: False
 
     def view(self):
         return dict(self.state)
@@ -184,7 +186,7 @@ class NetWatch:
                 self._drop_proxy()
                 self.state.update(ok=False, via=None)
                 self._repair(results)
-            self._wake.wait(CHECK_EVERY if self.state["ok"] else RETRY_EVERY)
+            self._wake.wait((CHECK_EVERY_AWAY if self.away_check() else CHECK_EVERY) if self.state["ok"] else RETRY_EVERY)
             self._wake.clear()
 
     def _restored(self):

@@ -47,6 +47,7 @@ PROJECT_SETTINGS = ("speed_claude_project_{}", "speed_codex_project_{}", "skills
                     "allowed_cmds_project_{}", "allow_edits_project_{}")
 MAX_CODE_FOLDER = 300_000_000      # bytes; bigger code folders aren't synced (GitHub isn't for huge assets)
 AUTO_EVERY = 120                    # seconds between automatic syncs while nothing is running
+AUTO_EVERY_AWAY = 600               # ...and while you're not using AI Amalgam (saves the phone's battery)
 
 
 def _sha(path):
@@ -97,6 +98,7 @@ class Sync:
                       "conflicts": [], "notes": [], "who": ""}
         self.rev = 0                  # bumps whenever a sync changed something here (the UI reloads)
         self.busy_check = lambda: False   # set by the app: True while the models are working
+        self.away_check = lambda: False   # set by the app: True while nobody is looking at AI Amalgam
         self.busy_ids = lambda: (None, None)   # set by the app: (chat id, project id) being worked on
         self.on_imported = None       # set by the app: called with the set of local chat ids changed
         self.on_network_error = None  # set by the app (phone): check and repair the connection
@@ -195,7 +197,8 @@ class Sync:
             woke = self._wake.wait(5)
             if quit_event.is_set():
                 return
-            due = woke or time.time() - last > AUTO_EVERY
+            every = AUTO_EVERY_AWAY if self.away_check() else AUTO_EVERY
+            due = woke or time.time() - last > every
             if not due or not self.configured() or self.busy_check():
                 continue
             self._wake.clear()

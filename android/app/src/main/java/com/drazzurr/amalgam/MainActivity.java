@@ -257,6 +257,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         visible = true;
+        web.resumeTimers();
+        web.onResume();
         Cover.hideSoon(this);
         ProxyService.cancelReadyNotice(this);
         if (showingStart) loadOrStart();
@@ -265,6 +267,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         visible = false;
+        // battery: stop the page's timers and checks while you're away (the background
+        // helper still watches for questions and finished discussions)
+        web.onPause();
+        web.pauseTimers();
         super.onPause();
     }
 

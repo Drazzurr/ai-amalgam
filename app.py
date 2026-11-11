@@ -284,6 +284,7 @@ class App:
         self.billing_vars = billing_vars_present()
         self.quit_event = threading.Event()
         self.last_activity = time.time()   # automatic updates wait for 2 idle minutes, even right after start
+        self.ui_seen = time.time()
         self.started = time.time()
         self.last_seen = None      # last time the window polled
         self.bye_at = None         # when a window said it was closing
@@ -317,6 +318,7 @@ class App:
         self.sync = Sync(self.store, DATA_DIR, WORKSPACE, device)
         self.set_device_name(device)
         self.sync.busy_check = lambda: self.orch.status == "running"
+        self.sync.away_check = self.away
         self.sync.busy_ids = lambda: (self.orch.chat_id, self.orch.project_id)
         self.sync.on_imported = self._after_import
         self._sync_rev_seen = 0
@@ -332,6 +334,7 @@ class App:
             except ValueError:
                 saved_proxy = None
             self.net = NetWatch(on_restored=self._network_back, proxy=saved_proxy)
+            self.net.away_check = self.away
             self.sync.on_network_error = self.net.poke
 
     def _after_import(self, chat_ids):
@@ -421,6 +424,13 @@ class App:
         old.server_close()
         self.server = self._listen(self.port, 30)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    AWAY_AFTER = 300     # seconds without AI Amalgam on screen before background work slows down
+
+    def away(self):
+        """Nobody has had AI Amalgam open for a while (and nothing is running)."""
+        return (time.time() - getattr(self, "ui_seen", time.time()) > self.AWAY_AFTER
+                and self.orch.status != "running")
 
     def android_version(self):
         """Newest version of the Android app (it has its own version number)."""
@@ -806,6 +816,13 @@ class App:
                     return self._json(app.term.read(offset if offset >= 0 else 0, wait))
                 if url.path == "/api/state":
                     app.last_seen = time.time()
+                    if "Dalvik" not in (self.headers.get("User-Agent") or ""):   # not the phone app's background helper
+                        if app.away():
+                            # back after a while: catch up now (sync and network checks slow down while away)
+                            app.sync.request()
+                            if app.net:
+                                app.net._wake.set()
+                        app.ui_seen = time.time()
                     q = parse_qs(url.query)
                     if q.get("focused", ["0"])[0] == "1":
                         app.focused_at = time.time()

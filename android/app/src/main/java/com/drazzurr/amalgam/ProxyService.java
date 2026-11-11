@@ -243,11 +243,13 @@ public class ProxyService extends Service {
                 log(this, "gave up: AI Amalgam didn't start within 10 minutes");
             }
             try {
-                Thread.sleep(waiting ? 700 : 3000);      // check often while the Terminal is starting it
+                // battery: check often only while the Terminal is starting it or a discussion runs
+                Thread.sleep(waiting ? 700 : "running".equals(last) ? 3000 : 15000);
             } catch (InterruptedException e) {
                 return;
             }
-            boolean up = MainActivity.amalgamUp();
+            // (the state request below tells us whether it's up; the extra check is only for starting)
+            boolean up = !waiting || MainActivity.amalgamUp();
             if (up && waiting) {
                 stopWaiting(this);
                 if (MainActivity.visible) log(this, "AI Amalgam started; you were already back in the app");
