@@ -186,8 +186,52 @@ public class MainActivity extends Activity {
         boolean asked = ProxyService.prefs(this).getBoolean("asked_auto_return", false);
         if (openTerminalNow && (Settings.canDrawOverlays(this) || asked)
                 && System.currentTimeMillis() - terminalOpenedAt > 60000) {
-            new Handler(Looper.getMainLooper()).postDelayed(this::openTerminal, 600);
+            attempts = 0;
+            new Handler(Looper.getMainLooper()).postDelayed(() -> startLinux(3000), 300);
         }
+    }
+
+    private int attempts = 0;
+    private static final Handler ui = new Handler(Looper.getMainLooper());
+
+    /** Start Linux without leaving this screen: Android only lets the Terminal start it while the
+     *  Terminal is on screen, so it opens for a few seconds underneath our loading screen. */
+    void startLinux(long terminalFor) {
+        if (!Cover.available(this)) {
+            openTerminal();                       // no "display over other apps": the old way
+            return;
+        }
+        Intent i = getPackageManager().getLaunchIntentForPackage(TERMINAL_PACKAGE);
+        if (i == null) {
+            web.evaluateJavascript("window.noTerminal && window.noTerminal()", null);
+            return;
+        }
+        terminalOpenedAt = System.currentTimeMillis();
+        ProxyService.startWaiting(this);          // safety net: the service brings us back too
+        Cover.show(this);
+        ui.postDelayed(() -> {
+            try {
+                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                Cover.hide(this);
+            }
+        }, 200);
+        ui.postDelayed(() -> {
+            if (visible) return;
+            try {
+                startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            } catch (Exception e) {
+                Cover.hide(this);
+            }
+        }, 200 + terminalFor);
+    }
+
+    /** Linux didn't start: try once more with the Terminal up longer, then show it as before. */
+    void retryLinux() {
+        attempts++;
+        if (attempts == 1) startLinux(8000);
+        else openTerminal();
     }
 
     void openTerminal() {
@@ -205,6 +249,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         visible = true;
+        Cover.hideSoon(this);
         ProxyService.cancelReadyNotice(this);
         if (showingStart) loadOrStart();
     }
@@ -259,6 +304,16 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openTerminal() {
             runOnUiThread(MainActivity.this::openTerminal);
+        }
+
+        @JavascriptInterface
+        public void retryLinux() {
+            runOnUiThread(MainActivity.this::retryLinux);
+        }
+
+        @JavascriptInterface
+        public boolean quietStart() {
+            return Cover.available(MainActivity.this);
         }
 
         @JavascriptInterface

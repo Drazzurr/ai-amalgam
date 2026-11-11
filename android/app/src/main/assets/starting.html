@@ -1,41 +1,97 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1a1b1e; color: #e8e9ec;
-         font: 16px/1.5 system-ui, Roboto, sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
-  h1 { font-size: 22px; margin: 18px 0 8px; } p { color: #a3a6ad; margin: 0 auto 22px; max-width: 320px; }
-  button { background: #2f8f68; color: #fff; border: 0; padding: 13px 22px; border-radius: 12px; font: 600 16px system-ui; }
-  .wait { margin-top: 18px; font-size: 13.5px; color: #7d8088; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #6c8cff; margin-right: 6px; animation: p 1s infinite; }
-  @keyframes p { 50% { opacity: .3; } }
-</style></head><body><div>
-  <svg width="84" height="84" viewBox="0 0 140 140"><rect width="140" height="140" rx="32" fill="#24262a"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(30 70 70)" fill="none" stroke="#e07a55" stroke-width="6"/><ellipse cx="70" cy="70" rx="50" ry="18" transform="rotate(-30 70 70)" fill="none" stroke="#1fbf85" stroke-width="6"/><circle cx="70" cy="70" r="15" fill="#6c8cff"/></svg>
+  :root { --bg: #1a1b1e; --fg: #e8e9ec; --dim: #a3a6ad; --faint: #6f727a; --green: #1fbf85; --orange: #e07a55; --blue: #6c8cff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, Roboto, sans-serif; text-align: center; padding: 28px; }
+  .wrap { width: 100%; max-width: 340px; }
+  .logo { width: 112px; height: 112px; margin: 0 auto; position: relative; }
+  .logo svg { width: 100%; height: 100%; overflow: visible; }
+  .orbit { transform-origin: 70px 70px; }
+  .o1 { animation: spin1 3.2s linear infinite; }
+  .o2 { animation: spin2 4.4s linear infinite; }
+  .core { transform-origin: 70px 70px; animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes spin1 { from { transform: rotate(30deg); } to { transform: rotate(390deg); } }
+  @keyframes spin2 { from { transform: rotate(-30deg); } to { transform: rotate(-390deg); } }
+  @keyframes pulse { 50% { transform: scale(.82); opacity: .75; } }
+  h1 { font-size: 22px; font-weight: 600; margin: 22px 0 4px; letter-spacing: .2px; }
+  .sub { color: var(--dim); margin: 0 0 26px; font-size: 14.5px; min-height: 22px; }
+  .steps { text-align: left; display: grid; gap: 12px; margin: 0 auto; width: fit-content; }
+  .step { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 15px; transition: color .3s; }
+  .mark { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #3a3d44; flex: none; display: grid; place-items: center;
+          transition: border-color .3s, background .3s; }
+  .step.now { color: var(--fg); }
+  .step.now .mark { border-color: var(--blue); border-top-color: transparent; animation: turn .9s linear infinite; }
+  .step.done { color: var(--dim); }
+  .step.done .mark { border-color: var(--green); background: var(--green); }
+  .step.done .mark::after { content: ""; width: 6px; height: 11px; border: solid #10151a; border-width: 0 2.5px 2.5px 0;
+                            transform: translate(0, -1px) rotate(45deg); }
+  @keyframes turn { to { transform: rotate(360deg); } }
+  .help { color: var(--dim); font-size: 13.5px; margin: 26px auto 0; max-width: 320px; }
+  button { background: #2f8f68; color: #fff; border: 0; padding: 12px 20px; border-radius: 12px; font: 600 15px system-ui; margin-top: 14px; }
+  button.quiet { background: #2a2c31; color: var(--fg); }
+  a { color: var(--dim); }
+  .hide { display: none; }
+</style></head><body><div class="wrap">
+  <div class="logo"><svg viewBox="0 0 140 140">
+    <ellipse class="orbit o1" cx="70" cy="70" rx="52" ry="19" style="fill:none;stroke:var(--orange)" stroke-width="6.5" stroke-linecap="round"/>
+    <ellipse class="orbit o2" cx="70" cy="70" rx="52" ry="19" style="fill:none;stroke:var(--green)" stroke-width="6.5" stroke-linecap="round"/>
+    <circle class="core" cx="70" cy="70" r="16" style="fill:var(--blue)"/>
+  </svg></div>
   <h1>Starting AI Amalgam</h1>
-  <p id="say">It runs inside the <b>Terminal</b> app, which is opening now. When the Terminal says it's running, come back here (or tap the notification).</p>
-  <div id="auto" style="display:none">
-    <p style="margin-top:-6px"><b>One-time setup:</b> let AI Amalgam come back here by itself once the Terminal has started it. On the next screen, switch on <b>Allow display over other apps</b>, then press Back.</p>
-    <button onclick="AmalgamApp.askAutoReturn()">Set up auto-return</button>
-    <div style="margin-top:12px"><a href="#" style="color:#a3a6ad" onclick="AmalgamApp.skipAutoReturn();return false">Not now</a></div>
+  <p class="sub" id="sub">This usually takes under a minute.</p>
+
+  <div class="steps" id="steps">
+    <div class="step now" id="s0"><span class="mark"></span>Starting Linux</div>
+    <div class="step" id="s1"><span class="mark"></span>Starting AI Amalgam</div>
+    <div class="step" id="s2"><span class="mark"></span>Connecting</div>
   </div>
-  <button id="open" onclick="AmalgamApp.openTerminal()">Open Terminal</button>
-  <div class="wait"><span class="dot"></span><span id="stage">Waiting for AI Amalgam…</span></div>
-  <p id="slow" style="display:none;margin-top:16px;font-size:13.5px">This is taking longer than usual. Open the Terminal and type <b>amalgam</b>, then come back.</p>
+
+  <div id="auto" class="hide">
+    <p class="help"><b>One-time setup:</b> let AI Amalgam start Linux without leaving this screen. On the next screen, switch on <b>Allow display over other apps</b>, then press Back.</p>
+    <button onclick="AmalgamApp.askAutoReturn()">Set it up</button>
+    <div style="margin-top:12px"><a href="#" onclick="AmalgamApp.skipAutoReturn();return false">Not now</a></div>
+  </div>
+
+  <div id="slow" class="hide">
+    <p class="help" id="slowText">This is taking longer than usual.</p>
+    <button class="quiet" onclick="AmalgamApp.openTerminal()">Open the Terminal</button>
+  </div>
 </div>
 <script>
+  const $ = id => document.getElementById(id);
   window.noTerminal = () => {
-    document.getElementById("say").innerHTML = "The Terminal app isn't on this phone yet. Turn on Settings → System → Developer options → <b>Linux development environment</b>, then set up AI Amalgam in it.";
+    $("steps").classList.add("hide");
+    $("sub").innerHTML = "The Terminal app isn't on this phone yet. Turn on Settings → System → Developer options → <b>Linux development environment</b>, then set up AI Amalgam in it.";
   };
+  const quiet = AmalgamApp.quietStart ? AmalgamApp.quietStart() : false;
   if (!AmalgamApp.canAutoReturn() && !AmalgamApp.askedAutoReturn()) {
-    document.getElementById("auto").style.display = "";
-    document.getElementById("open").style.display = "none";
+    $("auto").classList.remove("hide");
+  } else if (!quiet) {
+    $("sub").textContent = "The Terminal opens for a moment to start Linux, then you'll come back here.";
   }
-  const began = Date.now();
-  const say = ["Starting Linux in the Terminal…", "Linux is up. Starting AI Amalgam…"];
+
+  let began = Date.now(), stage0Since = Date.now(), retried = 0, last = -1;
+  const subs = ["Getting Linux ready…", "Linux is up. Starting AI Amalgam…", "Almost there…"];
+  function show(st) {
+    for (let i = 0; i < 3; i++) $("s" + i).className = "step" + (i < st ? " done" : i === st ? " now" : "");
+    if ($("auto").classList.contains("hide") && quiet) $("sub").textContent = subs[st];
+  }
   function tick() {
     const st = AmalgamApp.stage ? AmalgamApp.stage() : (AmalgamApp.isUp() ? 2 : 0);
-    if (st === 2) { AmalgamApp.goHome(); return; }
-    document.getElementById("stage").textContent = say[st] || say[0];
-    if (Date.now() - began > 60000) document.getElementById("slow").style.display = "";
+    if (st !== last) { last = st; show(st); if (st > 0) stage0Since = Infinity; }
+    if (st === 2) { show(3); setTimeout(() => AmalgamApp.goHome(), 350); return; }
+    // Linux never started: try again (Terminal up longer), then show the Terminal itself
+    if (st === 0 && quiet && Date.now() - stage0Since > 45000 && retried < 2 && AmalgamApp.retryLinux) {
+      retried++; stage0Since = Date.now(); AmalgamApp.retryLinux();
+    }
+    if (Date.now() - began > 75000) {
+      $("slow").classList.remove("hide");
+      $("slowText").innerHTML = st === 0
+        ? "Linux is taking a while to start. Open the Terminal to see what it's doing."
+        : "AI Amalgam is taking a while to start. Open the Terminal and type <b>amalgam</b>, then come back.";
+    }
     setTimeout(tick, 1000);
   }
   tick();
