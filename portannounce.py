@@ -51,6 +51,8 @@ class PortAnnouncer:
         self.delays = delays          # seconds after a watcher starts (it compiles its probe first)
         self.every = every
         self.listening_since = _uptime()
+        self.first_listen = self.listening_since   # seconds after Linux booted that AI Amalgam was ready
+        self.last_announce = None
         self.seen = set()
         self.due = []                 # uptimes at which to listen again
         self.count = 0
@@ -84,3 +86,11 @@ class PortAnnouncer:
             print("Listening again so the Terminal forwards the port")
             self.relisten()
             self.note_listening()
+            if self.last_announce is None:
+                self.last_announce = self.listening_since      # the first re-announce
+
+    def timing(self):
+        """How this start went, in seconds after Linux booted."""
+        return {"ready": round(self.first_listen, 1),
+                "announced": round(self.last_announce, 1) if self.last_announce else None,
+                "uptime": round(_uptime(), 1)}

@@ -81,7 +81,7 @@
   function tick() {
     const st = AmalgamApp.stage ? AmalgamApp.stage() : (AmalgamApp.isUp() ? 2 : 0);
     if (st !== last) { last = st; show(st); if (st > 0) stage0Since = Infinity; }
-    if (st === 2) { show(3); setTimeout(() => AmalgamApp.goHome(), 350); return; }
+    if (st === 2) { show(3); setTimeout(() => AmalgamApp.goHome(), 150); return; }
     // Linux never started: try again (Terminal up longer), then show the Terminal itself
     if (st === 0 && quiet && Date.now() - stage0Since > 45000 && retried < 2 && AmalgamApp.retryLinux) {
       retried++; stage0Since = Date.now(); AmalgamApp.retryLinux();
@@ -92,7 +92,7 @@
         ? "Linux is taking a while to start. Open the Terminal to see what it's doing."
         : "AI Amalgam is taking a while to start. Open the Terminal and type <b>amalgam</b>, then come back.";
     }
-    setTimeout(tick, 1000);
+    setTimeout(tick, 400);
   }
   tick();
 </script></body></html>

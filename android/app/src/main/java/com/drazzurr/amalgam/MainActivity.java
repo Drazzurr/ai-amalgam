@@ -168,13 +168,21 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private long startShownAt = 0;    // when the loading screen first appeared, to time the start
+
     private void goHome() {
+        if (showingStart && startShownAt > 0) {
+            ProxyService.prefs(this).edit()
+                    .putLong("last_start_ms", System.currentTimeMillis() - startShownAt).apply();
+        }
+        startShownAt = 0;
         showingStart = false;
         web.loadUrl(HOME);
     }
 
     /** "Starting AI Amalgam" screen; opens the Terminal app (which starts it) once. */
     private void showStart(boolean openTerminalNow) {
+        if (!showingStart || startShownAt == 0) startShownAt = System.currentTimeMillis();
         showingStart = true;
         String html;
         try (InputStream in = getAssets().open("starting.html")) {
@@ -309,6 +317,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void retryLinux() {
             runOnUiThread(MainActivity.this::retryLinux);
+        }
+
+        @JavascriptInterface
+        public long lastStart() {
+            return ProxyService.prefs(MainActivity.this).getLong("last_start_ms", 0);
         }
 
         @JavascriptInterface

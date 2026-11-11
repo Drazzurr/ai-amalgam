@@ -834,6 +834,8 @@ class App:
                     state["notify"] = app.store.get_setting("notify", "1") == "1"
                     state["auto_update"] = app.store.get_setting("auto_update", "1") == "1"
                     state["app_latest"] = app.android_version()
+                    if app.phone and getattr(app, "announcer", None):
+                        state["linux_start"] = app.announcer.timing()
                     state["check_questions"] = app.orch.check_questions
                     state["skills"] = list_skills()
                     state["skills_off"] = app.orch.skills_off()
@@ -1201,7 +1203,8 @@ class App:
         threading.Thread(target=self._notifier, daemon=True).start()
         if self.phone and sys.platform.startswith("linux"):
             from portannounce import PortAnnouncer
-            delays = tuple(int(x) for x in os.environ.get("AMALGAM_ANNOUNCE_DELAYS", "10,30").split(","))
+            # several tries: the earliest one usually lands as soon as the watcher is ready
+            delays = tuple(int(x) for x in os.environ.get("AMALGAM_ANNOUNCE_DELAYS", "2,5,10,30").split(","))
             self.announcer = PortAnnouncer(self._relisten, delays)
             self.announcer.start()
         if not self.args.demo:

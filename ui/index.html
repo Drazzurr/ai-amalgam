@@ -1576,7 +1576,8 @@ function renderAppCard(s) {
   if (!PHONE) { $("appCard").style.display = "none"; return; }
   const cur = s.app_latest || null, mine = APP ? APP.version() : null;   // the app has its own version
   const sig = JSON.stringify([cur, mine, s.network && s.network.via, APP && APP.keepAliveState ? APP.keepAliveState() : 0,
-    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0, s.app_latest]);
+    APP && APP.canAutoReturn ? APP.canAutoReturn() : 0, APP && APP.returnInfo ? APP.returnInfo() : 0, s.app_latest,
+    APP && APP.lastStart ? APP.lastStart() : 0, s.linux_start && s.linux_start.ready]);
   if (sig === appSig) return; appSig = sig;
   $("appCard").style.display = "";
   if (!APP) {
@@ -1596,7 +1597,10 @@ function renderAppCard(s) {
            <div class="btnrow"><button class="btn go" id="keepAlive">Set up keep-running</button></div>`) : ""}
       ${APP.canAutoReturn && !APP.canAutoReturn() ? `<p class="help">Auto-return is off, so after the app opens the Terminal you have to switch back yourself.</p>
         <div class="btnrow"><button class="btn" id="autoReturn">Turn on auto-return</button></div>` : ""}
-      ${APP.returnInfo && APP.returnInfo() ? `<p class="help">Last Terminal start: ${esc(APP.returnInfo())}</p>` : ""}`;
+      ${APP.returnInfo && APP.returnInfo() ? `<p class="help">Last Terminal start: ${esc(APP.returnInfo())}</p>` : ""}
+      ${APP.lastStart && APP.lastStart() ? `<p class="help">Last start took ${Math.round(APP.lastStart() / 1000)} s${
+        s.linux_start && s.linux_start.ready < 120 ? ` · AI Amalgam was ready ${Math.round(s.linux_start.ready)} s after Linux booted${
+          s.linux_start.announced ? `, shown to Android at ${Math.round(s.linux_start.announced)} s` : ""}` : ""}.</p>` : ""}`;
   }
   $("appBody").querySelectorAll("[data-ext]").forEach(b => b.onclick = () => window.open(b.dataset.ext, "_blank", "noopener"));
   if ($("autoReturn")) $("autoReturn").onclick = () => { APP.askAutoReturn(); appSig = ""; };
