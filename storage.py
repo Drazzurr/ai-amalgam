@@ -40,6 +40,8 @@ class Store:
         cols = {r[1] for r in self._db.execute("PRAGMA table_info(chats)")}
         if "doc_link" not in cols:
             self._db.execute("ALTER TABLE chats ADD COLUMN doc_link TEXT NOT NULL DEFAULT ''")
+        if "models_off" not in cols:   # models switched off in this chat, comma-separated keys
+            self._db.execute("ALTER TABLE chats ADD COLUMN models_off TEXT NOT NULL DEFAULT ''")
         if "allow_edits" not in cols:
             self._db.execute("ALTER TABLE chats ADD COLUMN allow_edits INTEGER NOT NULL DEFAULT 0")
         if "project_id" not in cols:
@@ -123,12 +125,17 @@ class Store:
 
     def chat_settings(self, chat_id):
         with self._lock:
-            row = self._db.execute("SELECT doc_link, allow_edits FROM chats WHERE id = ?",
+            row = self._db.execute("SELECT doc_link, allow_edits, models_off FROM chats WHERE id = ?",
                                    (chat_id,)).fetchone()
-        return {"doc_link": row[0], "allow_edits": bool(row[1])} if row else None
+        return ({"doc_link": row[0], "allow_edits": bool(row[1]),
+                 "models_off": [k for k in (row[2] or "").split(",") if k]} if row else None)
 
-    def set_chat_settings(self, chat_id, doc_link=None, allow_edits=None):
+    def set_chat_settings(self, chat_id, doc_link=None, allow_edits=None, models_off=None):
         with self._lock:
+            if models_off is not None:
+                val = ",".join(sorted(set(models_off)))
+                self._db.execute("UPDATE chats SET models_off = ?, edited = ? WHERE id = ? AND models_off != ?",
+                                 (val, time.time(), chat_id, val))
             if doc_link is not None:
                 self._db.execute("UPDATE chats SET doc_link = ?, edited = ? WHERE id = ? AND doc_link != ?",
                                  (doc_link.strip(), time.time(), chat_id, doc_link.strip()))
@@ -501,7 +508,7 @@ class Store:
         with self._lock:
             c = self._db.execute(
                 "SELECT c.id, c.uid, c.title, p.uid, c.doc_link, c.allow_edits, c.created, c.updated, c.edited, "
-                "c.summary FROM chats c LEFT JOIN projects p ON p.id = c.project_id WHERE c.uid = ?", (uid,)).fetchone()
+                "c.summary, c.models_off FROM chats c LEFT JOIN projects p ON p.id = c.project_id WHERE c.uid = ?", (uid,)).fetchone()
             if not c:
                 return None
             msgs = self._db.execute("SELECT uid, speaker, kind, text, created, device FROM messages WHERE chat_id = ? "
@@ -509,7 +516,7 @@ class Store:
             atts = self._db.execute("SELECT uid, name, path, size, created FROM attachments WHERE chat_id = ? "
                                     "ORDER BY id", (c[0],)).fetchall()
         d = dict(zip(("id", "uid", "title", "project_uid", "doc_link", "allow_edits", "created", "updated",
-                      "edited", "summary"), c))
+                      "edited", "summary", "models_off"), c))
         d["allow_edits"] = bool(d["allow_edits"])
 
         def local(path):
@@ -540,16 +547,16 @@ class Store:
                 cid = row[0]
                 if (m.get("edited") or 0) > (row[1] or 0):
                     self._db.execute("UPDATE chats SET title = ?, project_id = ?, doc_link = ?, allow_edits = ?, "
-                                     "edited = ? WHERE id = ?",
+                                     "models_off = ?, edited = ? WHERE id = ?",
                                      (m.get("title") or "Chat", pid, m.get("doc_link") or "",
-                                      int(bool(m.get("allow_edits"))), m["edited"], cid))
+                                      int(bool(m.get("allow_edits"))), m.get("models_off") or "", m["edited"], cid))
             else:
                 cid = self._db.execute(
-                    "INSERT INTO chats (title, created, updated, project_id, uid, edited, doc_link, allow_edits) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO chats (title, created, updated, project_id, uid, edited, doc_link, allow_edits, "
+                    "models_off) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (m.get("title") or "Chat", m.get("created") or time.time(), m.get("updated") or time.time(), pid,
                      m["uid"], m.get("edited") or time.time(), m.get("doc_link") or "",
-                     int(bool(m.get("allow_edits"))))).lastrowid
+                     int(bool(m.get("allow_edits"))), m.get("models_off") or "")).lastrowid
             self._db.execute("UPDATE chats SET updated = MAX(updated, ?) WHERE id = ?", (m.get("updated") or 0, cid))
             have = {u: (i, cr) for u, i, cr in self._db.execute(
                 "SELECT uid, id, created FROM messages WHERE chat_id = ?", (cid,))}

@@ -284,7 +284,7 @@ class Orchestrator:
             r.speed = sp if sp in ("fast", "balanced", "best") else "balanced"
         self.chat_id = None
         self.project_id = None   # project of the open chat, or where the next new chat goes
-        self.pending_chat_settings = {"doc_link": "", "allow_edits": False}  # before the chat exists
+        self.pending_chat_settings = {"doc_link": "", "allow_edits": False, "models_off": []}  # before the chat exists
         self.status = "idle"  # idle | running | waiting
         self.speaker = None
         self._lock = threading.Lock()
@@ -317,7 +317,8 @@ class Orchestrator:
             # new chats in a project start with the project's last "Allow doc edits" choice
             self.pending_chat_settings = {"doc_link": project["doc_link"] if project else "",
                                           "allow_edits": bool(project) and
-                                          self.store.get_setting(f"allow_edits_project_{project_id}") == "1"}
+                                          self.store.get_setting(f"allow_edits_project_{project_id}") == "1",
+                                          "models_off": []}
             self.status = "idle"
 
     def open_chat(self, chat_id):
@@ -371,9 +372,19 @@ class Orchestrator:
                         name = f"speed_{key}_project_{self.project_id}" if self.project_id else f"speed_{key}"
                         self.store.set_setting(name, sp)
             if enabled:
+                # switched on or off for this chat only (a new chat starts with everyone on)
+                off = set(self._models_off())
                 for key, on in enabled.items():
                     if key in self.enabled:
-                        self.enabled[key] = bool(on)
+                        self.enabled[key] = True
+                        (off.discard if on else off.add)(key)
+                if self.chat_id is None:
+                    self.pending_chat_settings["models_off"] = sorted(off)
+                else:
+                    self.store.set_chat_settings(self.chat_id, models_off=sorted(off))
+
+    def _models_off(self):
+        return list((self.chat_settings() or {}).get("models_off") or [])
 
     def chat_settings(self):
         if self.chat_id is None:
@@ -587,6 +598,7 @@ class Orchestrator:
                     self._run_no = getattr(self, "_run_no", 0) + 1   # the old run can't change anything now
 
     def state(self):
+        off = set(self._models_off())
         return {
             "chat_id": self.chat_id,
             "project_id": self.project_id,
@@ -606,7 +618,7 @@ class Orchestrator:
                      "allowed": self.allowed_commands(),
                      "pending_command": self.pending_commands["msg_id"] if self.pending_commands else None},
             "models": [
-                {"key": k, "name": self.runners[k].name, "enabled": self.enabled[k],
+                {"key": k, "name": self.runners[k].name, "enabled": self.enabled[k] and k not in off,
                  "status": self.runners[k].status(), "speed": self.runners[k].speed}
                 for k in self.order
             ],
@@ -621,7 +633,8 @@ class Orchestrator:
                 del self.resting[key]
                 if self.chat_id:
                     self._note(f"{self.runners[key].name}'s plan limit has reset, so it's back in the discussion.")
-        return [k for k in self.order if self.enabled[k] and k not in self.resting]
+        off = set(self._models_off())
+        return [k for k in self.order if self.enabled[k] and k not in off and k not in self.resting]
 
     def _note(self, text):
         self.store.add(self.chat_id, "Amalgam", "system", text)
@@ -632,11 +645,12 @@ class Orchestrator:
 
     def _loop(self, trigger_text):
         my_run = getattr(self, "_run_no", 0)
+        self._q_mark = self._last_user_id()      # this run answers everything you've said so far
         try:
             mentioned = {m.lower() for m in MENTION_RE.findall(trigger_text)}
             mentioned = {"gpt" if m in ("chatgpt", "codex") else m for m in mentioned}
             if not self._active():
-                self._note("No models are switched on. Turn one on in the right panel.")
+                self._note("No models are switched on in this chat. Tap one at the top, or turn one on under In this chat.")
                 return
             if mentioned and "all" not in mentioned:
                 asked = False
@@ -653,14 +667,14 @@ class Orchestrator:
                     if result == "command":
                         if self._auto_run() and not self.last_question:
                             continue
-                        if self.last_question:
-                            self._publish(self.last_question)
-                        if self.pending_commands or self.last_question:
+                        shown = bool(self.last_question) and self._publish(self.last_question)
+                        if self.pending_commands or shown:
                             self._pause_for_user()
-                        return
+                            return
+                        continue
                     if result == "question":
-                        self._publish(self.last_question)   # you asked this model directly: no check
-                        asked = True
+                        if self._publish(self.last_question):   # you asked this model directly: no check
+                            asked = True
                 if asked:
                     self._pause_for_user()
                 return
@@ -683,11 +697,12 @@ class Orchestrator:
                         if self._auto_run() and not self.last_question:
                             done_streak = 0
                             continue      # always-allowed commands ran; keep going
-                        if self.last_question:
-                            self._publish(self.last_question)
-                        if self.pending_commands or self.last_question:
+                        shown = bool(self.last_question) and self._publish(self.last_question)
+                        if self.pending_commands or shown:
                             self._pause_for_user()
-                        return
+                            return
+                        done_streak = 0
+                        continue
                     if result == "question":
                         outcome = self._ask_user(key)
                         if outcome == "error":
@@ -711,9 +726,15 @@ class Orchestrator:
         finally:
             with self._lock:
                 if getattr(self, "_run_no", 0) == my_run:
-                    if self.status == "running":
-                        self.status = "idle"
                     self.speaker = None
+                    if self.status == "running":
+                        # you sent something after the last model started its turn: nobody has
+                        # answered it yet, so keep going instead of stopping
+                        if not self._stop.is_set() and self._user_spoke():
+                            msgs = [m for m in self.store.messages(self.chat_id) if m["kind"] == "user"]
+                            self._start_run(msgs[-1]["text"] if msgs else "")
+                        else:
+                            self.status = "idle"
 
     def _maybe_condense(self):
         msgs = [m for m in self.store.messages(self.chat_id) if m["kind"] != "system"]
@@ -922,6 +943,7 @@ class Orchestrator:
 
     def _turn_reading(self, key):
         """A turn, plus up to three follow-ups when the model asked to read files."""
+        self._q_mark = self._last_user_id()     # what you'd said when this model started
         result = self._turn(key)
         hops = 0
         while result == "read" and hops < 3 and not self._stop.is_set():
@@ -1103,9 +1125,15 @@ class Orchestrator:
         finally:
             with self._lock:
                 if getattr(self, "_run_no", 0) == my_run:
-                    if self.status == "running":
-                        self.status = "idle"
                     self.speaker = None
+                    if self.status == "running":
+                        # you sent something after the last model started its turn: nobody has
+                        # answered it yet, so keep going instead of stopping
+                        if not self._stop.is_set() and self._user_spoke():
+                            msgs = [m for m in self.store.messages(self.chat_id) if m["kind"] == "user"]
+                            self._start_run(msgs[-1]["text"] if msgs else "")
+                        else:
+                            self.status = "idle"
 
     def run_file(self, rel):
         """You pressed Run on a file in the Code tab: run it now (your click is the approval)."""
@@ -1160,20 +1188,36 @@ class Orchestrator:
             self._note("You undid file changes back to before change #%d. The models will see the files as they are now." % change_id)
         return None
 
+    def _last_user_id(self):
+        if not self.chat_id:
+            return 0
+        ids = [m["id"] for m in self.store.messages(self.chat_id) if m["kind"] == "user"]
+        return ids[-1] if ids else 0
+
+    def _user_spoke(self):
+        """You sent a message after the current model started its turn."""
+        return self._last_user_id() > getattr(self, "_q_mark", 0)
+
     def _publish(self, q):
+        """Show a model's question — unless you said something meanwhile: then it's set aside and
+        the models answer you instead (your message may already answer or change it)."""
         speaker, question, choices = q
+        if self._user_spoke():
+            self._note(f"You sent a message while {speaker} was getting ready to ask something, "
+                       "so they'll respond to your message instead.")
+            return False
         self.question_open = True
         self.store.add(self.chat_id, speaker, "question",
                        question + "".join(f"\nCHOICE: {c}" for c in choices))
+        return True
 
     def _ask_user(self, asker):
         """A model wants to ask you something. Its teammates check the question first; if one
         holds it, the asker reconsiders once. Returns 'asked', 'continue' or 'error'."""
         q = self.last_question
         reviewers = [k for k in self._active() if k != asker]
-        if not reviewers or not self.check_questions:
-            self._publish(q)
-            return "asked"
+        if not reviewers or not self.check_questions or self._user_spoke():
+            return "asked" if self._publish(q) else "continue"
         names = " and ".join(self.runners[k].name for k in reviewers)
         self._note(f"{q[0]} wants to ask you something; {names} is checking it first.")
         choices_txt = "".join(f"\nCHOICE: {c}" for c in q[2])
@@ -1191,9 +1235,8 @@ class Orchestrator:
                 extra_qs.append(self.last_question)
             # AGREE, NEXT, DONE, or resting: the question goes ahead
         if not holds:
-            for x in [q] + extra_qs:
-                self._publish(x)
-            return "asked"
+            shown = [self._publish(x) for x in [q] + extra_qs]
+            return "asked" if any(shown) else "continue"
         for who, why in holds:
             self._note(f"{who} suggested holding {q[0]}'s question: {why}")
         if self._stop.is_set():
@@ -1209,9 +1252,8 @@ class Orchestrator:
             extra_qs.insert(0, self.last_question)
         elif result != "rested":
             self._note(f"{q[0]} held off on the question for now.")
-        for x in extra_qs:
-            self._publish(x)
-        return "asked" if extra_qs else "continue"
+        shown = [self._publish(x) for x in extra_qs]
+        return "asked" if any(shown) else "continue"
 
     def _build_prompt(self, key, extra=""):
         runner = self.runners[key]

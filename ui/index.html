@@ -87,7 +87,9 @@
   header .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .faces { display: flex; margin-left: auto; }
   .faces .av { width: 26px; height: 26px; font-size: 12px; margin-left: -6px; box-shadow: 0 0 0 2px var(--bg); }
-  .faces .av.off { opacity: .35; }
+  .faces .av.off { opacity: .35; filter: grayscale(1); }
+  .faces .face { background: none; border: 0; padding: 4px 0; margin: 0; cursor: pointer; display: flex; }
+  .faces .face:first-child .av { margin-left: 0; }
   #log { flex: 1; overflow-y: auto; padding: 18px 0 8px; }
   .msg { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 8px 32px; max-width: 920px; margin: 0 auto; }
   .msg:hover { background: rgba(255,255,255,.02); }
@@ -1002,7 +1004,16 @@ function renderModels(models) {
   $("models").querySelectorAll("[data-speed]").forEach(b => b.onclick = () =>
     api("/api/settings", {speeds: {[b.dataset.model]: b.dataset.speed}}));
   $("models").querySelectorAll("input").forEach(cb => cb.onchange = () => api("/api/settings", {enabled: {[cb.dataset.key]: cb.checked}}));
-  $("faces").innerHTML = models.map(m => av(m.name, m.enabled ? "" : "off")).join("");
+  // tap a face at the top to switch that model off or on in this chat
+  $("faces").innerHTML = models.map(m => `<button class="face" data-face="${m.key}" title="${esc(m.name)}: ${
+    m.enabled ? "on" : "off"} in this chat (tap to switch)">${av(m.name, m.enabled ? "" : "off")}</button>`).join("");
+  $("faces").querySelectorAll("[data-face]").forEach(b => b.onclick = () => {
+    const m = models.find(x => x.key === b.dataset.face);
+    if (!m) return;
+    if (m.enabled && models.filter(x => x.enabled).length === 1) { toast("At least one model needs to stay on."); return; }
+    api("/api/settings", {enabled: {[m.key]: !m.enabled}});
+    toast(`${m.name} is ${m.enabled ? "off" : "back on"} in this chat.`);
+  });
 }
 
 const statusLabel = {"connected": "", "needs sign-in": "needs sign-in", "failed": "not working", "check failed": "unchecked", "disabled": "off", "unknown": ""};

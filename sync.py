@@ -459,7 +459,7 @@ class Sync:
         local_uids = [x["uid"] for x in l.get("messages", [])]
         merged_uids = [x["uid"] for x in m["messages"]]
         need = (merged_uids != local_uids or meta_src is r and any(
-            m.get(k) != l.get(k) for k in ("title", "project_uid", "doc_link", "allow_edits"))
+            m.get(k) != l.get(k) for k in ("title", "project_uid", "doc_link", "allow_edits", "models_off"))
             or {a["uid"] for a in m["attachments"]} != {a["uid"] for a in l.get("attachments", [])})
         return m, need
 
