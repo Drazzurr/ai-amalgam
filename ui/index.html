@@ -1265,6 +1265,7 @@ async function poll() {
     lastSyncRev = s.sync_rev;
     $("reconnect").classList.remove("show");
     reconnectAsked = false;
+    if (APP && APP.pageOk) APP.pageOk();        // tells the app the page reaches AI Amalgam fine
     projectsById = Object.fromEntries((s.projects || []).map(p => [p.id, p]));
     const viewKey = s.chat_id + "|" + s.project_id;
     if (viewKey !== chatId) {

@@ -39,7 +39,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
-    private boolean showingStart = false;
+    private volatile boolean showingStart = false;
     private long terminalOpenedAt = 0;
     static volatile boolean visible = false;
 
@@ -72,7 +72,11 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
-                if (req.isForMainFrame() && !showingStart) showStart(true);
+                if (req.isForMainFrame() && !showingStart) {
+                    boolean wasTrying = tryingHome;
+                    tryingHome = false;
+                    showStart(!wasTrying);        // a failed try-anyway just goes back to waiting
+                }
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -131,23 +135,33 @@ public class MainActivity extends Activity {
 
     /** 0 = nothing on the port yet (Linux still starting), 1 = the port answers but AI Amalgam
      *  doesn't yet (the Terminal forwards the port as soon as Linux boots), 2 = AI Amalgam is up. */
+    static volatile String stageNote = "";     // why the last check said what it said (shown on the loading screen)
+
     static int amalgamStage() {
         try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress("127.0.0.1", 8765), 700);
+            sock.connect(new InetSocketAddress("127.0.0.1", 8765), 3000);
         } catch (Exception e) {
+            stageNote = "port: " + e.getClass().getSimpleName();
             return 0;
         }
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(HOME + "manifest.webmanifest").openConnection();
-            c.setConnectTimeout(1000);
-            c.setReadTimeout(2000);
+            c.setConnectTimeout(3000);
+            c.setReadTimeout(5000);
             c.setUseCaches(false);
-            if (c.getResponseCode() != 200) return 1;
+            int code = c.getResponseCode();
+            if (code != 200) {
+                stageNote = "answered " + code;
+                return 1;
+            }
             try (InputStream in = c.getInputStream()) {
-                return new String(ProxyService.readAll(in), StandardCharsets.UTF_8).contains("AI Amalgam") ? 2 : 1;
+                boolean ok = new String(ProxyService.readAll(in), StandardCharsets.UTF_8).contains("AI Amalgam");
+                stageNote = ok ? "ok" : "not AI Amalgam";
+                return ok ? 2 : 1;
             }
         } catch (Exception e) {
+            stageNote = "http: " + e.getClass().getSimpleName();
             return 1;
         } finally {
             if (c != null) c.disconnect();
@@ -172,15 +186,17 @@ public class MainActivity extends Activity {
      *  if Linux stopped, start it again quietly. Checks twice so a brief blip doesn't count. */
     void reconnect() {
         if (showingStart) return;
+        final long asked = System.currentTimeMillis();
         new Thread(() -> {
             if (amalgamStage() == 2) return;
             try {
-                Thread.sleep(1500);
+                Thread.sleep(4000);
             } catch (InterruptedException e) {
                 return;
             }
+            if (pageOkAt > asked) return;          // the page reached AI Amalgam: all good
             int stage = amalgamStage();
-            if (stage == 2) return;
+            if (stage == 2 || pageOkAt > asked) return;
             runOnUiThread(() -> {
                 if (showingStart) return;
                 // keep anything you were typing; the page puts it back once AI Amalgam is up again
@@ -191,13 +207,47 @@ public class MainActivity extends Activity {
     }
 
     private long startShownAt = 0;    // when the loading screen first appeared, to time the start
+    private static volatile int cachedStage = 0;
+    private volatile boolean polling = false;
+    private long triedHomeAt = 0;
+    private boolean tryingHome = false;   // loading AI Amalgam even though the check says no
+    private static volatile long pageOkAt = 0;
+
+    /** While the loading screen is up, check in the background (the page just reads the result,
+     *  so a slow check can't freeze it), and every 20 s try loading AI Amalgam anyway in case
+     *  the check is wrong. */
+    private void startPolling() {
+        if (polling) return;
+        polling = true;
+        new Thread(() -> {
+            while (showingStart) {
+                cachedStage = amalgamStage();
+                long now = System.currentTimeMillis();
+                if (showingStart && cachedStage != 2 && startShownAt > 0 && now - startShownAt > 20000
+                        && now - triedHomeAt > 20000 && visible) {
+                    triedHomeAt = now;
+                    runOnUiThread(() -> {
+                        if (!showingStart) return;
+                        tryingHome = true;
+                        goHome();
+                    });
+                }
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+            polling = false;
+        }).start();
+    }
 
     private void goHome() {
-        if (showingStart && startShownAt > 0) {
+        if (showingStart && startShownAt > 0 && !tryingHome) {
             ProxyService.prefs(this).edit()
                     .putLong("last_start_ms", System.currentTimeMillis() - startShownAt).apply();
+            startShownAt = 0;
         }
-        startShownAt = 0;
         showingStart = false;
         web.loadUrl(HOME);
     }
@@ -206,6 +256,7 @@ public class MainActivity extends Activity {
     private void showStart(boolean openTerminalNow) {
         if (!showingStart || startShownAt == 0) startShownAt = System.currentTimeMillis();
         showingStart = true;
+        startPolling();
         String html;
         try (InputStream in = getAssets().open("starting.html")) {
             html = new String(ProxyService.readAll(in), StandardCharsets.UTF_8);
@@ -367,7 +418,8 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String startInfo() {
-            return "tries: " + (attempts + 1) + " · " + ProxyService.prefs(MainActivity.this).getString("return_log", "");
+            return "check: " + stageNote + " · tries: " + (attempts + 1) + " · "
+                    + ProxyService.prefs(MainActivity.this).getString("return_log", "");
         }
 
         @JavascriptInterface
@@ -426,7 +478,13 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public int stage() {
-            return amalgamStage();
+            return cachedStage;
+        }
+
+        @JavascriptInterface
+        public void pageOk() {
+            pageOkAt = System.currentTimeMillis();
+            tryingHome = false;
         }
 
         @JavascriptInterface
