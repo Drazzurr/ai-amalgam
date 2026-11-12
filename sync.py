@@ -94,6 +94,8 @@ class Sync:
         self.device = device_name
         self.git = find_git()
         self._lock = threading.Lock()
+        self._git_busy = 0                  # git commands of ours running right now
+        self._git_busy_lock = threading.Lock()
         self.state = {"state": "off", "last_ok": 0, "error": "", "busy": False, "changed": 0,
                       "conflicts": [], "notes": [], "who": ""}
         self.rev = 0                  # bumps whenever a sync changed something here (the UI reloads)
@@ -248,11 +250,16 @@ class Sync:
                    GIT_COMMITTER_EMAIL="amalgam@localhost")
         cmd = [self.git, "-c", f"http.extraHeader=Authorization: Basic {auth}", "-c", "core.autocrlf=false",
                "-c", "core.quotepath=false", "-c", "core.longpaths=true", *args]
+        with self._git_busy_lock:
+            self._git_busy += 1
         try:
             r = subprocess.run(cmd, cwd=self.repo_dir, env=env, capture_output=True, timeout=timeout,
                                creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             raise SyncError("GitHub is taking too long to answer. Will try again shortly.")
+        finally:
+            with self._git_busy_lock:
+                self._git_busy -= 1
         out = (r.stdout + r.stderr).decode("utf-8", "replace")
         if check and r.returncode != 0:
             low = out.lower()
@@ -264,8 +271,35 @@ class Sync:
             raise SyncError("Git: " + out.strip().splitlines()[-1][:250] if out.strip() else "Git failed.")
         return r.returncode, out
 
+    def _clear_stale_locks(self):
+        """Git leaves '*.lock' files while it works and removes them when it's done. If it was stopped
+        halfway (AI Amalgam restarting for an update, the phone closing Linux), they stay behind and
+        every later sync fails with 'remove the file manually to continue'. Only AI Amalgam uses this
+        folder, so when none of our git commands is running, any lock left is stale: remove it."""
+        gitdir = os.path.join(self.repo_dir, ".git")
+        if not os.path.isdir(gitdir):
+            return 0
+        with self._git_busy_lock:
+            if self._git_busy:
+                return 0
+            removed = 0
+            for dirpath, _dirs, files in os.walk(gitdir):
+                if os.sep + "objects" in dirpath[len(gitdir):]:
+                    continue
+                for f in files:
+                    if f.endswith(".lock"):
+                        try:
+                            os.remove(os.path.join(dirpath, f))
+                            removed += 1
+                        except OSError:
+                            pass
+        if removed:
+            print(f"Sync: removed {removed} leftover git lock file(s)")
+        return removed
+
     def _prepare(self):
         """Make the local copy match what's on GitHub right now. Returns True if GitHub has anything."""
+        self._clear_stale_locks()
         repo = self.store.get_setting("sync_repo")
         url = repo if repo.startswith(("file://", "/")) else f"https://github.com/{repo}.git"   # paths: tests
         if not os.path.isdir(os.path.join(self.repo_dir, ".git")):
