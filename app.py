@@ -822,6 +822,8 @@ class App:
                             app.sync.request()
                             if app.net:
                                 app.net._wake.set()
+                            if time.time() - (app.update.get("checked_at") or 0) > 300:
+                                app.check_update()     # so "Up to date" isn't hours old
                         app.ui_seen = time.time()
                     q = parse_qs(url.query)
                     if q.get("focused", ["0"])[0] == "1":

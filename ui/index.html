@@ -1242,7 +1242,7 @@ function renderUpdate(u) {
     if (u.available) html += `<button class="new" id="updNow"><b>Update available: v${esc(u.latest)}</b><br>Click to install. Your chats and settings are kept.</button>`;
     if (u.error) html += `<span class="err">${esc(u.error)}</span>`;
     if (u.rollback && !u.available) html += `<button id="updBack" title="Undo the last update">Go back to v${esc(u.rollback)}</button><br>`;
-    html += `v${esc(u.current)} · <button id="updCheck">${u.state === "checking" ? "Checking…" : u.checked_at && !u.available && !u.error ? "Up to date ✓" : "Check for updates"}</button>`;
+    html += `AI Amalgam v${esc(u.current)} · <button id="updCheck">${u.state === "checking" ? "Checking…" : u.checked_at && !u.available && !u.error ? "Up to date ✓" : "Check for updates"}</button>`;
   }
   $("upd").innerHTML = html;
   if ($("updCheck")) $("updCheck").onclick = () => api("/api/update/check", {});
@@ -1628,7 +1628,9 @@ function renderAppCard(s) {
       <p class="help">After it downloads, tap it and choose Install (allow Chrome to install apps if asked). Then open AI Amalgam from the new icon and use the same pairing code.</p>`;
   } else {
     const via = s.network && s.network.via === "app";
-    $("appBody").innerHTML = `<p class="help" style="margin:0">App ${esc(mine)}${via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
+    $("appBody").innerHTML = `<p class="help" style="margin:0">Phone app ${esc(mine)}${cur && !newer(cur, mine) ? " (newest)" : ""}${
+      via ? " · sharing the phone's internet right now" : " · connection helper ready"}.</p>
+      <p class="help">The phone app has its own version number. AI Amalgam itself (v${esc((s.update || {}).current || "?")}) updates separately, by itself.</p>
       ${cur && newer(cur, mine) ? `<div class="btnrow"><button class="btn go" data-ext="${APK_URL}">Update the app to ${esc(cur)}</button></div>
         <p class="help">The app only needs updating now and then; AI Amalgam itself updates automatically.</p>` : ""}
       ${APP.keepAliveSetup ? (APP.keepAliveState() === "done"
