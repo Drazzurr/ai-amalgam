@@ -203,16 +203,23 @@ The **⋯** menu above a chat exports it as a Markdown file, or asks Claude to p
 a project, you can also export the project: its instructions, roles, decisions (project memory) and chat list,
 or everything including every chat. The same buttons are in the project's settings.
 
-## Packaging a Skyrim mod
-In a project whose code folder holds a Skyrim mod, open the **Code** tab and press **📦 Package mod**. Amalgam:
-- finds the files laid out like a Data folder (at the top of the code folder, or in a Data or mod subfolder);
-- leaves out work files (.blend, .psd, notes, scripts);
-- checks for common mistakes (LE vs SE plugins and meshes, uncompiled scripts, non-.dds textures, archives
-  whose names don't match a plugin, missing requirements);
-- builds a .zip in the `_packages` folder that Vortex and Mod Organizer 2 can install.
+## Packaging mods
+In a project whose code folder holds a mod, open the **Code** tab and press **📦 Package mod**. Amalgam
+works out the game from how the files are laid out (or pick it yourself), leaves out work files (.blend,
+.psd, notes), checks for that game's common mistakes, does the processing the game needs, and builds a
+.zip in the `_packages` folder that the game's usual mod manager installs. The report also goes into the
+chat, so the models can help fix any problems.
 
-Tick **FOMOD installer** to add an installer; folders in `Optional/<name>` become optional checkboxes in it.
-The check results also go into the chat, so the models can help fix any warnings.
+| Game | Lay the files out like | What packaging does | Install with |
+|---|---|---|---|
+| Skyrim SE/AE and LE | the Data folder (plugin, meshes/, textures/, scripts/…) | optional BSA archives (plus a Textures BSA on SE, and a small dummy plugin when there's none), optional FOMOD installer (`Optional/<name>` folders become choices); checks LE vs SE plugins and meshes, uncompiled scripts, non-.dds textures, archive names | Vortex, Mod Organizer 2 |
+| Baldur's Gate 3 | `Mods/<Folder>/meta.lsx`, `Public/…`, `Localization/…` (or a ready .pak) | converts localization .xml to .loca, sets the version in meta.lsx, packs the .pak (LSLib's Divine if installed, otherwise Amalgam's own packer) and writes info.json; checks the UUID, Folder and version | BG3 Mod Manager, Vortex, the in-game mod manager |
+| Cyberpunk 2077 | the game folder: `archive/pc/mod`, `r6/scripts`, `r6/tweaks`, CET and RED4ext folders (or a WolvenKit project) | packs a WolvenKit project's files into an .archive (needs WolvenKit); checks archive placement, YAML tabs, CET init.lua; lists what players need (ArchiveXL, TweakXL, redscript, CET, RED4ext) | Vortex, or unzip into the game folder |
+| Mass Effect LE | a `DLC_MOD_<Name>` folder with `CookedPCConsole` | writes or updates moddesc.ini; checks Mount.dlc (LE2/LE3), AutoLoad.ini (LE1) and folder names. Pick LE1, LE2 or LE3. | ME3Tweaks Mod Manager |
+| The Witcher 3 | `mods/mod<Name>/content` (or just `content/`), `dlc/`, `bin/config/…` | packs loose game files into a bundle with metadata.store (needs wcc_lite from REDkit); checks the mod prefix, bundles without metadata.store, menu file lists | Vortex, The Witcher 3 Mod Manager |
+
+The helpers (lz4 for compressed Skyrim SE archives, LSLib, WolvenKit) come from **Apps → Game files → Install
+helpers**. wcc_lite comes with REDkit (free on Steam); Amalgam finds it in your Steam libraries.
 
 ## Managing chats
 - Hover a chat in the sidebar: ✎ renames it, 🗑 deletes it.

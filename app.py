@@ -1399,8 +1399,9 @@ class App:
                     code_dir = app.orch.code_dir()
                     if not code_dir:
                         return self._json({"error": "This project has no code folder."}, 400)
-                    opts = {k: data[k] for k in ("name", "version", "author", "description", "url", "game",
-                                                 "include_source", "fomod") if data.get(k) is not None}
+                    opts = {k: data[k] for k in ("name", "version", "author", "description", "url", "game", "target",
+                                                 "edition", "bsa", "compress", "me_game", "include_source", "fomod")
+                            if data.get(k) is not None}
                     if path == "/api/mod/check":
                         return self._json(modpack.check(code_dir, opts))
                     return self._json(app.build_mod(code_dir, opts))

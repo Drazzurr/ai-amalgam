@@ -74,6 +74,7 @@
   .modform { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; margin-bottom: 12px; }
   .modform label { display: grid; gap: 3px; font-size: 12.5px; color: var(--quiet); }
   .modform label.chk { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 13.5px; }
+  .modform label[data-g]:not(.on) { display: none; }
   .modrep { font-size: 13.5px; line-height: 1.5; } .modrep .sec { margin: 10px 0 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
   .modrep li { margin: 3px 0; } .modrep .e { color: #f08a84; } .modrep .w { color: var(--ask); } .modrep .ok { color: var(--gpt); }
   @media (max-width: 760px) {
@@ -627,7 +628,7 @@
   <div id="log"></div>
   <div id="codeView">
     <div class="ctabs"><button class="on" data-ct="files">Files</button><button data-ct="changes">Changes</button><button data-ct="term">Terminal</button>
-      <span class="sp"></span><button class="btn" id="modBtn" title="Check this folder and package it as an installable Skyrim mod">📦 Package mod</button><span class="path" id="codePath"></span></div>
+      <span class="sp"></span><button class="btn" id="modBtn" title="Check this folder and package it as an installable mod (Skyrim, Baldur's Gate 3, Cyberpunk 2077, Mass Effect LE, Witcher 3)">📦 Package mod</button><span class="path" id="codePath"></span></div>
     <div class="cpane on" id="ct-files">
       <div class="filelist"><input class="field" id="fileFilter" placeholder="Filter files…" spellcheck="false"><div class="items" id="fileItems"></div></div>
       <div class="viewer"><div class="vbar"><button class="btn backfiles" id="backFiles" style="display:none">‹ Files</button><span class="sp" id="vName">Pick a file</span>
@@ -686,19 +687,24 @@
   <div class="pfoot show"><span class="qstat" id="qFoot"></span><span class="sp"></span><button class="btn" id="qClear">Clear finished</button></div>
 </div></div>
 <div class="panel" id="modPanel"><div class="pbox">
-  <div class="phead"><h2>Package mod</h2><span class="qstat">Skyrim · for Vortex and Mod Organizer 2</span><span class="sp"></span><button class="btn" id="modClose">Close</button></div>
+  <div class="phead"><h2>Package mod</h2><span class="qstat" id="modGameLbl"></span><span class="sp"></span><button class="btn" id="modClose">Close</button></div>
   <div class="pbody">
     <div class="modform">
-      <label>Mod name<input class="field" id="modName" placeholder="from the plugin's name"></label>
+      <label>Game<select class="field" id="modTarget"><option value="auto">Auto-detect</option><option value="skyrim">Skyrim</option><option value="bg3">Baldur's Gate 3</option><option value="cyberpunk">Cyberpunk 2077</option><option value="masseffect">Mass Effect Legendary Edition</option><option value="witcher3">The Witcher 3</option></select></label>
+      <label>Mod name<input class="field" id="modName" placeholder="from the mod's files"></label>
       <label>Version<input class="field" id="modVer" value="1.0.0"></label>
-      <label>Author<input class="field" id="modAuthor" placeholder="from the plugin"></label>
-      <label>Game<select class="field" id="modGame"><option value="se">Skyrim Special / Anniversary Edition</option><option value="le">Skyrim Legendary Edition</option></select></label>
-      <label style="grid-column:1/-1">Description (for the installer)<input class="field" id="modDesc" placeholder="from the plugin"></label>
-      <label class="chk"><input type="checkbox" id="modSrc" checked> Include script sources (.psc)</label>
-      <label class="chk"><input type="checkbox" id="modFomod"> Make a FOMOD installer (needed for Optional/ parts)</label>
+      <label>Author<input class="field" id="modAuthor" placeholder="from the mod's files"></label>
+      <label data-g="skyrim">Edition<select class="field" id="modEd"><option value="se">Special / Anniversary Edition</option><option value="le">Legendary Edition</option></select></label>
+      <label data-g="masseffect">Which game<select class="field" id="modMe"><option value="">Pick…</option><option value="LE1">Mass Effect 1 (LE1)</option><option value="LE2">Mass Effect 2 (LE2)</option><option value="LE3">Mass Effect 3 (LE3)</option></select></label>
+      <label style="grid-column:1/-1">Description<input class="field" id="modDesc" placeholder="from the mod's files"></label>
+      <label data-g="masseffect" style="grid-column:1/-1">Mod page link (optional)<input class="field" id="modUrl" placeholder="https://www.nexusmods.com/…"></label>
+      <label class="chk" data-g="skyrim"><input type="checkbox" id="modBsa"> Pack loose files into BSA archives (loads faster)</label>
+      <label class="chk" data-g="skyrim"><input type="checkbox" id="modComp" checked> Compress the BSA archives</label>
+      <label class="chk" data-g="skyrim"><input type="checkbox" id="modFomod"> Make a FOMOD installer (needed for Optional/ parts)</label>
+      <label class="chk" data-g="skyrim"><input type="checkbox" id="modSrc" checked> Include script sources (.psc)</label>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="modCheck">Check</button><button class="btn go" id="modBuild">Build package</button></div>
-    <div class="modrep" id="modRep"><p class="plain">Amalgam finds the mod's files where they'd sit in Skyrim's Data folder (in this code folder, or its Data or mod subfolder), leaves out work files like .blend and .psd, checks for common mistakes, and builds a .zip in the _packages folder.</p></div>
+    <div class="modrep" id="modRep"><p class="plain">Amalgam works out which game the mod is for from how its files are laid out, leaves out work files like .blend and .psd, checks for that game's common mistakes, does the processing the game needs (archives, converted files, installer files) and builds a .zip in the _packages folder that the game's usual mod manager installs.</p></div>
   </div>
 </div></div>
 <div class="gview" id="gView"><div class="gimg"><img id="gvImg" alt=""></div><div class="ginfo" id="gvInfo"></div></div>
@@ -1724,9 +1730,18 @@ document.addEventListener("keydown", e => {
 }, true);
 
 // ---------- mod packaging ----------
+let modGame = null;          // the game the last check was for
 function modOpts() {
-  return {name: $("modName").value.trim(), version: $("modVer").value.trim(), author: $("modAuthor").value.trim(),
-          description: $("modDesc").value.trim(), game: $("modGame").value, include_source: $("modSrc").checked, fomod: $("modFomod").checked};
+  const o = {target: $("modTarget").value, name: $("modName").value.trim(), version: $("modVer").value.trim(),
+             author: $("modAuthor").value.trim(), description: $("modDesc").value.trim()};
+  const g = $("modTarget").value === "auto" ? modGame : $("modTarget").value;
+  if (g === "skyrim") Object.assign(o, {edition: $("modEd").value, bsa: $("modBsa").checked, compress: $("modComp").checked,
+                                        fomod: $("modFomod").checked, include_source: $("modSrc").checked});
+  if (g === "masseffect") Object.assign(o, {me_game: $("modMe").value, url: $("modUrl").value.trim()});
+  return o;
+}
+function modShowOpts(g) {
+  document.querySelectorAll("#modPanel .modform [data-g]").forEach(el => el.classList.toggle("on", el.dataset.g === g));
 }
 function modReport(r, built) {
   const li = (cls, list) => list.map(x => `<li class="${cls}">${esc(x)}</li>`).join("");
@@ -1734,10 +1749,13 @@ function modReport(r, built) {
   let h = "";
   if (r.error) h = `<p class="e">${esc(r.error)}</p>`;
   else {
+    const steps = r.steps || [], req = r.requires || [];
     if (built && r.path) h += `<p class="ok"><b>Built ${esc(r.path.split(/[\\/]/).pop())}</b> (${mb(r.package_bytes)}). ${PHONE ? "" : `<button class="btn" id="modReveal">Show in folder</button>`}</p>`;
-    h += `<p>${r.files} files (${mb(r.bytes || 0)}) from <code>${esc(r.root || "")}</code>${r.plugins && r.plugins.length ? " · plugins: " + r.plugins.map(p => esc(p.name) + (p.esl ? " (ESL)" : p.esm ? " (ESM)" : "")).join(", ") : ""}</p>`;
+    if (r.root) h += `<p>${r.files} files (${mb(r.bytes || 0)}) from <code>${esc(r.root)}</code>${r.game === "skyrim" && r.plugins && r.plugins.length ? " · plugins: " + r.plugins.map(p => esc(p.name) + (p.esl ? " (ESL)" : p.esm ? " (ESM)" : "")).join(", ") : ""}</p>`;
     if (r.errors.length) h += `<div class="sec">Problems (fix these to package)</div><ul>${li("e", r.errors)}</ul>`;
     if (r.warnings.length) h += `<div class="sec">Warnings</div><ul>${li("w", r.warnings)}</ul>`;
+    if (steps.length) h += `<div class="sec">${built ? "Done" : "Packaging will"}</div><ul>${li("", steps)}</ul>`;
+    if (req.length) h += `<div class="sec">Players need</div><p>${req.map(esc).join(", ")} <span class="plain">(list these as requirements on your mod page)</span></p>`;
     if (r.notes.length) h += `<div class="sec">Notes</div><ul>${li("", r.notes)}</ul>`;
     if (!r.errors.length && !r.warnings.length && !built) h += `<p class="ok">No problems found.</p>`;
     if (r.optional && r.optional.length) h += `<div class="sec">Optional parts</div><p>${r.optional.map(esc).join(", ")}</p>`;
@@ -1749,16 +1767,20 @@ function modReport(r, built) {
 async function modCheck() {
   $("modRep").innerHTML = `<p class="plain">Checking…</p>`;
   const r = await api("/api/mod/check", modOpts());
-  if (!r.error && r.plugins && r.plugins[0]) {
-    if (!$("modName").value) $("modName").placeholder = r.plugins[0].name.replace(/\.es[plm]$/i, "");
-    if (!$("modAuthor").value && r.plugins[0].author) $("modAuthor").placeholder = r.plugins[0].author;
-    if (!$("modDesc").value && r.plugins[0].description) $("modDesc").placeholder = r.plugins[0].description;
-  }
-  if (r.optional && r.optional.length && !$("modFomod").dataset.touched && !$("modFomod").checked) {
+  const g = r.error ? null : r.game || null;
+  if (g !== modGame && $("modTarget").value === "auto" && g) { modGame = g; modShowOpts(g); return modCheck(); }  // check again with that game's options
+  modGame = g; modShowOpts(g);
+  $("modGameLbl").textContent = r.label ? (r.detected ? "Detected: " : "") + r.label : "";
+  const d = r.plugins && r.plugins[0];
+  for (const [id, k] of [["modName", "name"], ["modAuthor", "author"], ["modDesc", "description"]])
+    $(id).placeholder = d && d[k] ? (k === "name" ? d[k].replace(/\.es[plm]$/i, "") : d[k]) : "from the mod's files";
+  if (g === "masseffect" && !$("modMe").value && r.me && r.me.game) { $("modMe").value = r.me.game; return modCheck(); }
+  if (g === "skyrim" && r.optional && r.optional.length && !$("modFomod").dataset.touched && !$("modFomod").checked) {
     $("modFomod").checked = true; return modCheck();      // optional parts need the installer: check again with it on
   }
   modReport(r, false);
 }
+for (const id of ["modTarget", "modEd", "modMe", "modBsa"]) $(id).addEventListener("change", modCheck);
 $("modBtn").onclick = () => { $("modPanel").classList.add("show"); modCheck(); };
 $("modClose").onclick = () => $("modPanel").classList.remove("show");
 $("modCheck").onclick = modCheck;

@@ -1,18 +1,14 @@
-"""Package a project's code folder as a Skyrim mod archive that Vortex or Mod Organizer 2 can install,
-after checking it for the usual packaging mistakes.
-
-The mod's files are found where they live in a Data folder (plugins, meshes/, textures/, scripts/...):
-at the top of the code folder, or in a Data/ or mod/ subfolder. Work files (Blender scenes, Photoshop
-files, Python scripts, notes) are left out. Optional parts can go in Optional/<name>/ (each laid out
-like a Data folder); with the installer option they become checkboxes in a FOMOD installer.
-"""
+"""Skyrim (Special/Anniversary Edition and Legendary Edition): check a mod laid out like the game's
+Data folder and package it for Vortex or Mod Organizer 2, optionally packing loose files into a BSA
+archive and adding a FOMOD installer for Optional/<name> parts."""
 
 import os
 import re
-import time
 import xml.etree.ElementTree as ET
-import zipfile
 from xml.sax.saxutils import escape
+
+from . import bsa
+from .common import new_report, safe_name
 
 PLUGIN_EXT = (".esp", ".esm", ".esl")
 DATA_DIRS = {"meshes", "textures", "scripts", "source", "interface", "sound", "music", "seq", "skse", "strings",
@@ -20,12 +16,15 @@ DATA_DIRS = {"meshes", "textures", "scripts", "source", "interface", "sound", "m
              "dialogueviews", "facegen", "actors", "lightplacer", "distantlod", "terrain", "trees", "shaders",
              "platform", "netscriptframework", "skee", "dyndolod", "parallax", "fomod"}
 SKIP_DIRS = {".git", "_packages", "node_modules", "__pycache__", ".vscode", ".idea", ".venv", "venv", "optional"}
+LABEL = "Skyrim"
+# loose files that must stay loose (SKSE plugins, MCM settings, videos, animation tools...)
+KEEP_LOOSE = {"skse", "mcm", "video", "seq", "nemesis_engine", "calientetools", "source", "fomod", "lightplacer", "netscriptframework", "platform", "dyndolod", "skee"}
 WORK_EXT = (".blend", ".blend1", ".blend2", ".psd", ".xcf", ".kra", ".spp", ".sbs", ".sbsar", ".ztl", ".max", ".ma",
             ".mb", ".fbx", ".obj", ".dae", ".gltf", ".glb", ".stl", ".py", ".pyc", ".md", ".log", ".bak", ".tmp",
             ".ps1", ".bat", ".sh", ".zip", ".7z", ".rar", ".git", ".gitignore", ".gitattributes", ".ds_store")
 BASE_MASTERS = {"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm"}
 TEXTURE_OK = (".dds",)
-MESH_OK = (".nif", ".tri", ".hkx", ".btr", ".bto", ".egm", ".ssf", ".xml", ".txt", ".hko")
+MESH_OK = (".nif", ".kf", ".tri", ".hkx", ".btr", ".bto", ".egm", ".ssf", ".xml", ".txt", ".hko")
 
 
 def find_root(code_dir):
@@ -97,8 +96,7 @@ def _nif_stream(path):
 
 def check(code_dir, opts):
     """What would go in the package, and anything that looks wrong. Errors stop the build."""
-    rep = {"errors": [], "warnings": [], "notes": [], "files": 0, "bytes": 0, "plugins": [], "root": None,
-           "left_out": [], "optional": [], "existing_fomod": False}
+    rep = new_report("skyrim", LABEL)
     root = find_root(code_dir)
     if not root:
         rep["errors"].append("This folder doesn't look like a Skyrim mod: no plugin (.esp/.esm/.esl), archive (.bsa) "
@@ -111,7 +109,8 @@ def check(code_dir, opts):
     rep["files"] = len(files)
     rep["bytes"] = sum(os.path.getsize(f) for _r, f in files)
     names_low = {}
-    se = opts.get("game", "se") != "le"
+    se = edition(opts) != "le"
+    rep["label"] = "Skyrim Special Edition" if se else "Skyrim Legendary Edition"
     plugins = [(r, f) for r, f in files if "/" not in r and r.lower().endswith(PLUGIN_EXT)]
     plugin_names = {os.path.splitext(r)[0].lower() for r, _f in plugins}
     in_mod = {r.lower() for r, _f in plugins}
@@ -187,6 +186,16 @@ def check(code_dir, opts):
             rep["notes"].append("Using your own FOMOD installer (fomod/ModuleConfig.xml); the archive keeps your folder layout.")
         except ET.ParseError as e:
             rep["errors"].append(f"fomod/ModuleConfig.xml isn't valid XML ({e}); Vortex and MO2 would fail to read it.")
+    if opts.get("bsa"):
+        squeeze = opts.get("compress", True)
+        if squeeze and se:
+            try:
+                import lz4.frame  # noqa: F401  (Special Edition archives are LZ4-compressed)
+            except ImportError:
+                squeeze = False
+        rep["steps"].append("Packs loose meshes, textures, scripts and sounds into BSA archive(s)" + (" (compressed)." if squeeze else "."))
+    if opts.get("fomod") and not rep["existing_fomod"]:
+        rep["steps"].append("Adds a FOMOD installer" + (f" with {len(rep['optional'])} optional part(s)." if rep["optional"] else "."))
     rep["warnings"] = rep["warnings"][:60]
     return rep
 
@@ -227,55 +236,70 @@ def _fomod_xml(name, version, author, description, url, optional):
     return info, module
 
 
-def build(code_dir, opts):
-    """Make the archive in <code folder>/_packages. Returns (path or None, report)."""
-    rep = check(code_dir, opts)
-    if rep["errors"]:
-        return None, rep
+def edition(opts):
+    e = (opts.get("edition") or opts.get("game") or "se").lower()
+    return "le" if e == "le" else "se"
+
+
+def detect(code_dir):
+    """How much this folder looks like a Skyrim mod (0 = not at all)."""
+    root = find_root(code_dir)
+    if not root:
+        return 0
+    names = {n.lower() for n in os.listdir(root)}
+    score = sum(5 for n in names if n.endswith(PLUGIN_EXT + (".bsa",)))
+    score += sum(2 for n in names if n in ("meshes", "textures", "scripts", "interface", "skse", "seq", "sound"))
+    return score
+
+
+def prepare(code_dir, opts, rep, stage):
+    """The files to put in the archive: [(path inside the archive, file on disk or bytes)]."""
     root = rep["root"]
-    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", opts.get("name") or "").strip() or \
-        (os.path.splitext(rep["plugins"][0]["name"])[0] if rep["plugins"] else os.path.basename(code_dir))
-    version = (opts.get("version") or "1.0.0").strip()[:20]
-    author = (opts.get("author") or (rep["plugins"][0]["author"] if rep["plugins"] else "") or "").strip()[:80]
-    description = (opts.get("description") or (rep["plugins"][0]["description"] if rep["plugins"] else "") or "").strip()[:2000]
-    out_dir = os.path.join(code_dir, "_packages")
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"{name} {version}.zip".replace("  ", " "))
+    se = edition(opts) != "le"
     files, _left = _walk(root, opts.get("include_source") is not False)
+    name = safe_name(opts.get("name") or (os.path.splitext(rep["plugins"][0]["name"])[0] if rep["plugins"] else
+                                          os.path.basename(code_dir)))
+    author = (opts.get("author") or (rep["plugins"][0]["author"] if rep["plugins"] else "") or "").strip()[:80]
+    if opts.get("bsa"):
+        files = _pack_bsa(files, opts, rep, stage, name, author, se)
     fomod = opts.get("fomod") and not rep["existing_fomod"]
-    tmp = path + ".part"
-    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-        if fomod:
-            info, module = _fomod_xml(name, version, author, description, opts.get("url", ""), rep["optional"])
-            z.writestr("fomod/info.xml", info)
-            z.writestr("fomod/ModuleConfig.xml", module)
-            for rel, full in files:
-                if not rel.lower().startswith("fomod/"):
-                    z.write(full, "Main/" + rel)
-            for o in rep["optional"]:
-                ofiles, _l = _walk(os.path.join(code_dir, "Optional", o), opts.get("include_source") is not False)
-                for rel, full in ofiles:
-                    z.write(full, f"Optional/{o}/{rel}")
-        else:
-            for rel, full in files:
-                z.write(full, rel)
-    os.replace(tmp, path)
-    rep["path"] = path
-    rep["package_bytes"] = os.path.getsize(path)
-    rep["built_at"] = time.time()
-    return path, rep
+    if not fomod:
+        return files
+    version = (opts.get("version") or "1.0.0").strip()[:20]
+    description = (opts.get("description") or (rep["plugins"][0]["description"] if rep["plugins"] else "") or "").strip()[:2000]
+    info, module = _fomod_xml(name, version, author, description, opts.get("url", ""), rep["optional"])
+    out = [("fomod/info.xml", info.encode("utf-8")), ("fomod/ModuleConfig.xml", module.encode("utf-8"))]
+    out += [("Main/" + rel, full) for rel, full in files if not rel.lower().startswith("fomod/")]
+    for o in rep["optional"]:
+        ofiles, _l = _walk(os.path.join(code_dir, "Optional", o), opts.get("include_source") is not False)
+        out += [(f"Optional/{o}/{rel}", full) for rel, full in ofiles]
+    return out
 
 
-def summary(rep):
-    """A short note for the chat, so the models know how packaging went."""
-    if rep.get("path"):
-        head = (f"Packaged {os.path.basename(rep['path'])}: {rep['files']} files, "
-                f"{rep['package_bytes'] / 1e6:.1f} MB, in {os.path.dirname(rep['path'])}.")
-    else:
-        head = "Mod check: " + (f"{len(rep['errors'])} problem(s) stop packaging." if rep["errors"] else
-                                f"{rep['files']} files ready to package.")
-    parts = [head] + [f"Problem: {e}" for e in rep["errors"]] + [f"Warning: {w}" for w in rep["warnings"][:15]] + \
-        [f"Note: {n}" for n in rep["notes"]]
-    if len(rep["warnings"]) > 15:
-        parts.append(f"(and {len(rep['warnings']) - 15} more warnings)")
-    return "\n".join(parts)
+def _pack_bsa(files, opts, rep, stage, name, author, se):
+    """Pack loose assets into <plugin>.bsa (+ <plugin> - Textures.bsa on Special Edition)."""
+    plugin = next((p["name"] for p in rep["plugins"] if not p["esl"] or se), None)
+    base = os.path.splitext(plugin)[0] if plugin else name
+    packable = [(r, f) for r, f in files if "/" in r and r.split("/")[0].lower() not in KEEP_LOOSE
+                and not r.lower().endswith((".psc",))]
+    if not packable:
+        rep["steps"].append("Nothing to put in a BSA (no loose meshes, textures, scripts or sounds).")
+        return files
+    loose = [(r, f) for r, f in files if (r, f) not in packable]
+    groups = [(base + ".bsa", packable)]
+    if se:
+        tex = [(r, f) for r, f in packable if r.lower().startswith("textures/")]
+        rest = [(r, f) for r, f in packable if not r.lower().startswith("textures/")]
+        groups = ([(base + ".bsa", rest)] if rest else []) + ([(base + " - Textures.bsa", tex)] if tex else [])
+    made = []
+    for arc_name, members in groups:
+        path = stage.file(arc_name)
+        notes = bsa.write_bsa(path, members, version=105 if se else 104, compress=bool(opts.get("compress", True)))
+        rep["notes"] += [n for n in notes if n not in rep["notes"]]
+        made.append((arc_name, path))
+        rep["steps"].append(f"Packed {len(members)} files into {arc_name} ({os.path.getsize(path) / 1e6:.1f} MB).")
+    if not plugin:
+        esp = base + (".esl" if se else ".esp")
+        made.append((esp, bsa.dummy_plugin(author, esl=se)))
+        rep["steps"].append(f"Added {esp}, an empty plugin whose only job is to make the game load the archive.")
+    return loose + made
