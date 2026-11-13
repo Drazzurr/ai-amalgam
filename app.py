@@ -43,11 +43,51 @@ NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 # ---------- small helpers ----------
 
+LOG_MAX = 5_000_000    # bytes; then amalgam.log moves to amalgam.log.1 (one older copy is kept)
+
+
+class RotatingLog:
+    """amalgam.log that starts over (keeping one older copy) when it gets big, so a copy left
+    running in the background for weeks can't fill the disk."""
+
+    def __init__(self, path, max_bytes=LOG_MAX):
+        self.path, self.max_bytes = path, max_bytes
+        self._lock = threading.Lock()
+        self._f = open(path, "a", encoding="utf-8", buffering=1)
+
+    def _rotate(self):
+        self._f.close()
+        try:
+            os.replace(self.path, self.path + ".1")
+        except OSError:
+            pass
+        self._f = open(self.path, "a", encoding="utf-8", buffering=1)
+
+    def write(self, text):
+        with self._lock:
+            try:
+                if self._f.tell() > self.max_bytes:
+                    self._rotate()
+            except (OSError, ValueError):
+                pass
+            return self._f.write(text)
+
+    def flush(self):
+        with self._lock:
+            self._f.flush()
+
+    def isatty(self):
+        return False
+
+    def fileno(self):
+        return self._f.fileno()
+
+
 def setup_logging(console):
     """Started without a console (pythonw), print() has nowhere to go: use a log file."""
     if console and sys.stdout is not None:
         return
-    log = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+    log = RotatingLog(LOG_FILE)
     sys.stdout = log
     sys.stderr = log
     print(f"\n--- AI Amalgam started {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
@@ -272,6 +312,13 @@ class App:
         self.store = Store(DB_FILE)
         from codework import Checkpoints
         self.orch = Orchestrator(self.store, make_runners(WORKSPACE, demo=args.demo), Checkpoints(DATA_DIR))
+        # Chats whose discussion kept going after you opened another chat (chat id -> its orchestrator).
+        # The window always shows self.orch; these finish on their own and then let you know.
+        self.background = {}
+        self.attention = {}        # chat id -> what happened while you were elsewhere (question, done, ...)
+        self._switch_lock = threading.RLock()
+        self._orch_cfg = {}        # app-wide settings every orchestrator gets (device, Blender, game folders)
+        self._orch_cfg["blender_on"] = self.orch.blender_on
         self.phone = bool(getattr(args, "phone", False))
         if self.phone:
             ident = phone_identity()
@@ -302,7 +349,7 @@ class App:
         from runners import clean_env
         self.apps = apps
         self.blender_setup = apps.BlenderSetup(clean_env)
-        self.orch.blender_path = apps.find_blender()[0]
+        self._set_all("blender_path", apps.find_blender()[0])
         self.games = {"detected": {}, "state": "idle", "log": []}
         self._load_game_folders()
         # The phone's Terminal forwards the port from its Linux system to Chrome, so listen there too.
@@ -317,7 +364,7 @@ class App:
         device = self.store.get_setting("device_name") or ("Phone" if self.phone else "PC")
         self.sync = Sync(self.store, DATA_DIR, WORKSPACE, device)
         self.set_device_name(device)
-        self.sync.busy_check = lambda: self.orch.status == "running"
+        self.sync.busy_check = self.any_running
         self.sync.away_check = self.away
         self.sync.busy_ids = lambda: (self.orch.chat_id, self.orch.project_id)
         self.sync.on_imported = self._after_import
@@ -336,6 +383,115 @@ class App:
             self.net = NetWatch(on_restored=self._network_back, proxy=saved_proxy)
             self.net.away_check = self.away
             self.sync.on_network_error = self.net.poke
+
+    # ----- several chats at once -----
+
+    def _set_all(self, attr, value):
+        """An app-wide setting every orchestrator needs (the one on screen and any in the background)."""
+        self._orch_cfg[attr] = value
+        for o in self.all_orchs():
+            setattr(o, attr, value)
+
+    def all_orchs(self):
+        return [self.orch] + [o for o in list(self.background.values()) if o is not self.orch]
+
+    def any_running(self):
+        return any(o.status == "running" for o in self.all_orchs())
+
+    def _make_orch(self):
+        """A fresh orchestrator with its own Claude and GPT runners, so two chats never share a run."""
+        from orchestrator import Orchestrator
+        from runners import make_runners
+        o = Orchestrator(self.store, make_runners(WORKSPACE, demo=self.args.demo), self.orch.cp)
+        for k, v in self._orch_cfg.items():
+            setattr(o, k, v)
+        return o
+
+    def switch_to(self, chat_id=None, project_id=None, new=False):
+        """Open a chat (or start a new one). If the chat on screen is still being worked on, it keeps
+        going in the background instead of stopping, and lets you know when it finishes or needs you."""
+        with self._switch_lock:
+            cur = self.orch
+            if not new and chat_id is not None and cur.chat_id == chat_id:
+                if cur.status != "running":
+                    cur.open_chat(chat_id)        # reopening the same chat: refresh it, as before
+                self.attention.pop(chat_id, None)
+                return
+            target = None if new else self.background.pop(chat_id, None)
+            if cur.status == "running" and cur.chat_id is not None:
+                self.background[cur.chat_id] = cur
+                front = target or self._make_orch()
+            else:
+                front = target or cur
+            if front is not cur:
+                # files you attached but haven't sent belong to the window, not to a chat
+                front.pending_files, cur.pending_files = cur.pending_files, []
+                self.orch = front
+            if target is None:
+                if new:
+                    front.new_chat(project_id)
+                else:
+                    front.open_chat(chat_id)
+            if chat_id is not None:
+                self.attention.pop(chat_id, None)
+
+    def code_busy_elsewhere(self):
+        """Another chat is working in this chat's code folder right now (two at once would collide)."""
+        mine = self.orch.code_dir()
+        if not mine:
+            return None
+        for cid, o in list(self.background.items()):
+            if o is not self.orch and o.status == "running" and o.code_dir() == mine:
+                return self.store.chat_title(cid) or "another chat"
+        return None
+
+    @staticmethod
+    def _outcome(o):
+        """How a chat's run ended: commands | question | error | done, or None (still working, or you stopped it)."""
+        if o.status == "running":
+            return None
+        if o.pending_commands:
+            return "commands"
+        if o.status == "waiting" or o.question_open:
+            return "question"
+        if o.hint == "error":
+            return "error"
+        if o.hint == "stopped":
+            return None
+        return "done"
+
+    def busy_chats(self):
+        """For the sidebar: chats working in the background, and ones that need you."""
+        out = {str(cid): what for cid, what in list(self.attention.items())}
+        for cid, o in list(self.background.items()):
+            if o is not self.orch:
+                what = "running" if o.status == "running" else self._outcome(o)
+                if what:
+                    out[str(cid)] = what
+        return out
+
+    def _reap_background(self):
+        """Background chats that finished or need you: tell you, then let them go (everything is saved)."""
+        for cid, o in list(self.background.items()):
+            if o.status == "running" or o is self.orch:
+                continue
+            what = self._outcome(o)
+            title = self.store.chat_title(cid) or "A chat"
+            with self._switch_lock:
+                if self.background.get(cid) is not o:
+                    continue                        # you opened it meanwhile
+                if what:
+                    self.attention[cid] = what      # before it leaves the background list: no gap in the sidebar
+                del self.background[cid]
+            if not what:
+                continue
+            msg = {"commands": f"\u201c{title}\u201d wants to run a command.",
+                   "question": f"\u201c{title}\u201d has a question for you.",
+                   "error": f"\u201c{title}\u201d paused: a model couldn't reply.",
+                   "done": f"\u201c{title}\u201d " + ("reached the round limit." if o.hint == "limit" else "finished.")}[what]
+            self.sync.request()
+            if self.store.get_setting("notify", "1") == "1" and time.time() - self.focused_at > 3:
+                toast("AI Amalgam", msg)
 
     def _cached(self, key, ttl, fn):
         """A slow-to-work-out value for the window's frequent status checks: computed once, then
@@ -399,8 +555,14 @@ class App:
 
     def _notifier(self):
         """Pop up a Windows notification when the models need you or finish, if you're not looking."""
-        prev = self.orch.status
+        prev, prev_obj = self.orch.status, self.orch
         while not self.quit_event.wait(1):
+            try:
+                self._reap_background()
+            except Exception as e:
+                print("Background check failed:", e)
+            if self.orch is not prev_obj:      # you switched chats: start from that chat's state
+                prev, prev_obj = self.orch.status, self.orch
             st = self.orch.status
             if prev == "running" and st != "running":
                 self.sync.request()
@@ -450,7 +612,7 @@ class App:
     def away(self):
         """Nobody has had AI Amalgam open for a while (and nothing is running)."""
         return (time.time() - getattr(self, "ui_seen", time.time()) > self.AWAY_AFTER
-                and self.orch.status != "running")
+                and not self.any_running())
 
     def android_version(self):
         """Newest version of the Android app (it has its own version number)."""
@@ -463,7 +625,7 @@ class App:
     def set_device_name(self, name):
         """Tell the models which device you're using (stored with each message you send)."""
         from orchestrator import device_tag
-        self.orch.device = device_tag("phone" if self.phone else "pc", name.replace("|", "/"))
+        self._set_all("device", device_tag("phone" if self.phone else "pc", name.replace("|", "/")))
 
     def relaunch(self):
         """Start again after an update. Under the phone's Linux service, systemd brings us back
@@ -475,7 +637,11 @@ class App:
             if phoneservice.installed() and os.environ.get("AMALGAM_NO_HANDOVER") != "1":
                 phoneservice.hand_over(APP_DIR)
                 return
-        self.updater.restart_later(self.args_list)
+        args = [a for a in self.args_list if a != "--no-open"]
+        window_open = self.last_seen is not None and time.time() - self.last_seen < 20
+        if self.keep_running() and not window_open:
+            args.append("--no-open")      # running in the background: don't pop a window up after an update
+        self.updater.restart_later(args)
 
     def _setup_service(self):
         """Phone: make Linux start AI Amalgam at boot, so the app never waits on a Terminal window."""
@@ -637,33 +803,50 @@ class App:
                 except Exception as e:
                     print("Game detection failed:", e)
             folders = list(dict.fromkeys(list(self.games["detected"].values()) + user))
-            self.orch.game_folders = folders
+            self._set_all("game_folders", folders)
             oodle.add_search_dirs(folders)
         self.games["user"] = user
         threading.Thread(target=work, daemon=True).start()
 
     def update_clis(self):
-        """Update Claude Code (and Codex) to their latest versions; fixes come out often."""
+        """Update Claude Code and Codex to their latest versions; fixes come out often."""
         if getattr(self, "cli_update", {}).get("state") == "running":
             return
         self.cli_update = {"state": "running", "log": []}
 
-        def work():
+        def run(args, timeout=600):
             from runners import clean_env
-            for name, cmd in (("Claude Code", ["claude", "update"]),):
-                exe = shutil.which(cmd[0])
+            r = subprocess.run(args, capture_output=True, timeout=timeout, env=clean_env(),
+                               creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
+            out = (r.stdout + r.stderr).decode("utf-8", "replace").strip().splitlines()
+            return r.returncode, (out[-1] if out else "done")
+
+        def work():
+            log = self.cli_update["log"]
+            try:
+                exe = shutil.which("claude")
                 if not exe:
-                    self.cli_update["log"].append(f"{name}: not found")
-                    continue
-                try:
-                    r = subprocess.run([exe] + cmd[1:], capture_output=True, timeout=600, env=clean_env(),
-                                       creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
-                    out = (r.stdout + r.stderr).decode("utf-8", "replace").strip().splitlines()
-                    self.cli_update["log"].append(f"{name}: " + (out[-1] if out else "done"))
-                except Exception as e:
-                    self.cli_update["log"].append(f"{name}: {e}")
-            self.cli_update["state"] = "done"
-            self.refresh_connections()
+                    log.append("Claude Code: not found")
+                else:
+                    try:
+                        log.append("Claude Code: " + run([exe, "update"])[1])
+                    except Exception as e:
+                        log.append(f"Claude Code: {e}")
+                exe = shutil.which("codex")
+                if not exe:
+                    log.append("Codex: not found")
+                else:
+                    try:
+                        code, last = run([exe, "update"])      # built in since Codex 0.128
+                        npm = shutil.which("npm")
+                        if code != 0 and npm:              # older Codex: update it the way it was installed
+                            code, last = run([npm, "install", "-g", "@openai/codex@latest"])
+                        log.append("Codex: " + (last if code == 0 else f"couldn't update ({last})"))
+                    except Exception as e:
+                        log.append(f"Codex: {e}")
+            finally:
+                self.cli_update["state"] = "done"
+                self.refresh_connections()
         threading.Thread(target=work, daemon=True).start()
 
     def install_game_helpers(self):
@@ -742,7 +925,7 @@ class App:
                 print(f"Connections for {runner.name}:", models[key])
             self.connections.update(models=models, checked_at=time.time(), checking=False)
             names = {it["name"] for it in (models.get("claude") or {}).get("items", []) if "blender" in it["name"].lower()}
-            self.orch.blender_servers = sorted(names | {"blender"})
+            self._set_all("blender_servers", sorted(names | {"blender"}))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -882,6 +1065,7 @@ class App:
                     else:
                         state["messages"] = app.store.messages(state["chat_id"], after) if state["chat_id"] else []
                     state["sync_rev"] = app.sync.rev
+                    state["busy_chats"] = app.busy_chats()
                     if q.get("lite", ["0"])[0] == "1":   # quick refresh while models talk
                         return self._json(state)
                     state["chats"] = app.store.chats()
@@ -899,6 +1083,7 @@ class App:
                     state["update"] = dict(app.update, rollback=app._cached("rollback", 60, lambda: app.updater.last_backup()[1]))
                     state["notify"] = app.store.get_setting("notify", "1") == "1"
                     state["auto_update"] = app.store.get_setting("auto_update", "1") == "1"
+                    state["keep_running"] = app.keep_running()
                     state["app_latest"] = app.android_version()
                     if app.phone and getattr(app, "announcer", None):
                         state["linux_start"] = app.announcer.timing()
@@ -992,16 +1177,24 @@ class App:
                 path = url.path
                 if path not in ("/api/bye", "/api/term/resize", "/api/proxy"):
                     app.last_activity = time.time()     # automatic updates wait until you've been idle
+                starts = path in ("/api/send", "/api/resume", "/api/regenerate", "/api/edit-last", "/api/code/run") or \
+                    (path == "/api/approve" and data.get("ok"))
+                if starts and app.orch.status != "running":
+                    other = app.code_busy_elsewhere()
+                    if other:
+                        return self._json({"error": f"\u201c{other}\u201d is working in this project's code folder right "
+                                                    "now. Wait for it to finish (or open it and press Stop), so the two "
+                                                    "don't change the same files at once."}, 409)
                 if path == "/api/send":
                     app.orch.send(str(data.get("text", "")))
                 elif path == "/api/stop":
                     threading.Thread(target=app.orch.stop, daemon=True).start()
                 elif path == "/api/new":
                     pid = data.get("project_id")
-                    app.orch.new_chat(int(pid) if pid else None)
+                    app.switch_to(project_id=int(pid) if pid else None, new=True)
                 elif path == "/api/project/new":
                     pid = app.store.new_project(str(data.get("name", "")))
-                    app.orch.new_chat(pid)
+                    app.switch_to(project_id=pid, new=True)
                     return self._json({"ok": True, "project_id": pid})
                 elif path == "/api/project/update":
                     roles = data.get("roles")
@@ -1071,6 +1264,11 @@ class App:
                     app.store.rename_chat(int(data["chat_id"]), str(data.get("title", "")))
                 elif path == "/api/chat/delete":
                     cid = int(data["chat_id"])
+                    with app._switch_lock:
+                        bg = app.background.pop(cid, None)
+                    if bg is not None and bg is not app.orch:
+                        bg.stop()                 # it was still working in the background
+                    app.attention.pop(cid, None)
                     if app.orch.chat_id == cid:
                         app.orch.new_chat(app.orch.project_id)
                     app.store.delete_chat(cid)
@@ -1080,20 +1278,24 @@ class App:
                 elif path == "/api/chat/move":
                     pid = data.get("project_id")
                     app.store.move_chat(int(data["chat_id"]), int(pid) if pid else None)
-                    if app.orch.chat_id == int(data["chat_id"]):
-                        app.orch.project_id = int(pid) if pid else None
+                    for o in app.all_orchs():
+                        if o.chat_id == int(data["chat_id"]):
+                            o.project_id = int(pid) if pid else None
                 elif path == "/api/project/delete":
                     pid = int(data["project_id"])
                     app.store.delete_project(pid)
-                    if app.orch.project_id == pid:
-                        app.orch.project_id = None
+                    for o in app.all_orchs():
+                        if o.project_id == pid:
+                            o.project_id = None
                 elif path == "/api/open":
-                    app.orch.open_chat(int(data["chat_id"]))
+                    app.switch_to(int(data["chat_id"]))
                 elif path == "/api/settings":
                     app.orch.settings(data.get("max_rounds"), data.get("enabled"), data.get("speeds"),
                                       data.get("check_questions"), data.get("notify"))
                     if data.get("auto_update") is not None:
                         app.store.set_setting("auto_update", "1" if data.get("auto_update") else "0")
+                    if data.get("keep_running") is not None:
+                        app.store.set_setting("keep_running", "1" if data.get("keep_running") else "0")
                 elif path == "/api/skills/toggle":
                     app.orch.set_skill(str(data.get("name", "")), bool(data.get("on")))
                 elif path == "/api/ui":
@@ -1106,7 +1308,7 @@ class App:
                     app.blender_setup.start()
                     app.refresh_connections_later = True
                 elif path == "/api/apps/blender/toggle":
-                    app.orch.blender_on = bool(data.get("on"))
+                    app._set_all("blender_on", bool(data.get("on")))
                     app.store.set_setting("blender_on", "1" if app.orch.blender_on else "0")
                 elif path == "/api/games/add":
                     folder = str(data.get("path") or "") or (pick_folder() or "")
@@ -1137,7 +1339,7 @@ class App:
                 elif path == "/api/games/install-helpers":
                     app.install_game_helpers()
                 elif path == "/api/apps/blender/recheck":
-                    app.orch.blender_path = app.apps.find_blender()[0]
+                    app._set_all("blender_path", app.apps.find_blender()[0])
                     app.refresh_connections()
                 elif path == "/api/resume":
                     app.orch.resume()
@@ -1234,37 +1436,51 @@ class App:
 
         return Handler
 
-    def _watchdog(self, track_window):
-        """Close the app when its window is gone (closed, or not checking in any more)."""
+    def keep_running(self):
+        """PC: stay running after the window closes (finish work, install updates); the shortcut reopens it."""
+        return not self.phone and self.store.get_setting("keep_running", "1") == "1"
+
+    def _watch_step(self, now):
+        """One look at whether the window is still there. Returns "quit" when the app should close."""
+        last = self.last_seen
+        bye_closed = bool(self.bye_at and now - self.bye_at > BYE_GRACE and (last or 0) < self.bye_at)
+        gone = bye_closed or (last is not None and now - last > IDLE_LIMIT)
+        # Models still working: keep going in the background, even with the window closed.
+        if self.any_running():
+            self._busy_until = now + 6
+            if gone and self._told_at < (last or 0) + 1:
+                self._told_at = now
+                toast("AI Amalgam is still working",
+                      "You'll get a notification when the models finish or need you. "
+                      "Open the app again from the desktop shortcut to watch.")
+            return None
+        if now < self._busy_until:      # let the "finished" notification go out first
+            return None
+        never = last is None and not self.args.no_open and now - self.started > NEVER_OPENED
+        if not (gone or never):
+            return None
+        if self.keep_running():
+            if not self._told_bg and last is not None:
+                self._told_bg = True
+                print("Window closed; staying in the background.")
+                toast("AI Amalgam is still running",
+                      "It finishes work and installs updates in the background. Open it again from the "
+                      "shortcut. To close it completely, use Quit in the app.")
+            return None
+        if last is None and self.args.no_open:
+            return None        # started without a window on purpose: wait for one to connect
+        print("Window closed." if bye_closed else "No window connected; closing." if never
+              else "Window stopped checking in; closing.")
+        return "quit"
+
+    def _watchdog(self, track_window=False):
+        """Close the app when its window is gone (closed, or not checking in any more),
+        unless it's set to keep running in the background."""
         if self.phone:
             return    # on the phone the app keeps running; Chrome tabs come and go
-        opened_at = time.time()
-        busy_until, told_at = 0, 0
+        self._busy_until, self._told_at, self._told_bg = 0, 0, False
         while not self.quit_event.wait(2):
-            now = time.time()
-            gone = (self.bye_at and now - self.bye_at > BYE_GRACE and (self.last_seen or 0) < self.bye_at) or \
-                   (self.last_seen is not None and now - self.last_seen > IDLE_LIMIT)
-            # Models still working: keep going in the background, even with the window closed.
-            if self.orch.status == "running":
-                busy_until = now + 6
-                if gone and told_at < (self.last_seen or 0) + 1:
-                    told_at = now
-                    toast("AI Amalgam is still working",
-                          "You'll get a notification when the models finish or need you. "
-                          "Open the app again from the desktop shortcut to watch.")
-                continue
-            if now < busy_until:      # let the "finished" notification go out first
-                continue
-            # A window said goodbye and no window has checked in since: it was closed.
-            if self.bye_at and now - self.bye_at > BYE_GRACE and (self.last_seen or 0) < self.bye_at:
-                print("Window closed.")
-                return self.quit()
-            if self.last_seen is None:
-                if now - self.started > NEVER_OPENED:
-                    print("No window connected; closing.")
-                    return self.quit()
-            elif now - self.last_seen > IDLE_LIMIT:
-                print("Window stopped checking in; closing.")
+            if self._watch_step(time.time()) == "quit":
                 return self.quit()
 
     def run(self):
@@ -1323,6 +1539,8 @@ class App:
                 pass
         try:
             if self.args.no_open or self.phone:
+                if not self.phone:
+                    threading.Thread(target=self._watchdog, daemon=True).start()
                 self.quit_event.wait()
                 return
             if not self.args.browser:
@@ -1336,6 +1554,11 @@ class App:
                     threading.Thread(target=lambda: (self.quit_event.wait(), w.destroy()),
                                      daemon=True).start()
                     webview.start()
+                    if self.keep_running() and not self.quit_event.is_set():
+                        toast("AI Amalgam is still running",
+                              "It finishes work and installs updates in the background. Open it again from "
+                              "the shortcut. To close it completely, use Quit in the app.")
+                        self.quit_event.wait()
                     return
             self.window = open_window(self.url, force_browser=self.args.browser)
             threading.Thread(target=self._watchdog, args=(False,), daemon=True).start()
@@ -1349,10 +1572,11 @@ class App:
         print("Shutting down.")
         if self.term:
             self.term.stop()
-        try:
-            self.orch.stop()
-        except Exception:
-            pass
+        for o in self.all_orchs():
+            try:
+                o.stop()
+            except Exception:
+                pass
         if not self.args.demo and self.sync.configured():
             print("Syncing before closing...")
             done = threading.Event()

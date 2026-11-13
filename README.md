@@ -42,7 +42,9 @@ and in the Start menu. (Tip: right-click it in the Start menu and choose *Pin to
 
 ### 5. Start the app
 Double-click the **AI Amalgam** shortcut. It opens in its own window with no console.
-- Close the window, or click **Quit AI Amalgam** at the bottom left, and the app shuts down.
+- Closing the window leaves the app running quietly in the background, so it can finish work and
+  install updates (switch this off under Info → **Keep running after I close the window**). Click
+  **Quit AI Amalgam** at the bottom left to shut it down completely.
 - Starting it again while it's already open just opens another window to the same app.
 - **Try Demo Mode.bat** opens the app with stand-in models (uses none of your plans' usage).
 - **AI Amalgam.bat** does the same as the shortcut, if you'd rather not make one.
@@ -88,8 +90,8 @@ Your normal browser isn't involved.
   Drive tools don't load in a turn (a known Claude Code issue in background mode), the models
   read that copy instead, and a gray note tells you. If the doc is shared by link, Amalgam also
   refreshes the copy itself. Edits still need the Drive tools.
-- **Update Claude Code** (Connections card) installs the newest Claude Code, which is where
-  fixes for connector problems arrive.
+- **Update Claude Code & Codex** (Connections card) installs the newest Claude Code and Codex,
+  which is where fixes for connector problems arrive.
 
 ## Game files
 
@@ -126,15 +128,19 @@ Blender in the background for batch jobs and renders (with your approval).
 ## Handy extras
 
 - **Closing the window doesn't stop the work.** If the models are still talking, the app keeps
-  going in the background and notifies you when they finish or need you, then closes. Reopen it
-  from the desktop shortcut any time.
+  going in the background and notifies you when they finish or need you. Reopen it from the
+  desktop shortcut any time.
+- **Switching chats doesn't stop the work either.** Open another chat while the models are talking
+  and the first discussion keeps going. A pulsing dot in the sidebar shows it's working, a coloured
+  dot shows it finished or has a question, and you get a pop-up. Two chats can't work in the same
+  code folder at once.
 - **Formatting:** lists, headings, tables, links and code blocks show properly. Code blocks have a
   **Copy** button; hover any message for **Copy**, **Edit** (your last message) and **Regenerate**.
 - **Continue / Retry:** when a discussion stops (round limit, Stop, or an error), a button
   picks it back up.
 - **Notifications:** when the models need you or finish while you're in another window, you get a
   Windows pop-up and a chime (switch off under Discussion).
-- **Search** all chats with **Ctrl+K**. **Ctrl+N** new chat, **Esc** stop, **Ctrl+Enter** approve
+- **Search** all chats with **Ctrl+K**: best matches first, all your words in any order. **Ctrl+N** new chat, **Esc** stop, **Ctrl+Enter** approve
   a command.
 - **Export** a chat as a Markdown file, or copy it all, from the **⋯** menu at the top right.
 - **Tidy panel:** click a card's title to fold it; the app remembers.

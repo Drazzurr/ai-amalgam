@@ -61,6 +61,13 @@
   .sublabel { font-size: 11.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 14px 0 6px; }
   .sublabel .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
   .crow { position: relative; }
+  /* chats working in the background (pulsing) or waiting for you */
+  .bdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; flex: none; }
+  .bdot.running { background: var(--gpt); animation: bpulse 1.2s ease-in-out infinite; }
+  .bdot.question, .bdot.commands { background: var(--ask); }
+  .bdot.error { background: #f08a84; }
+  .bdot.done { background: var(--you); }
+  @keyframes bpulse { 50% { opacity: .3; } }
   .crow .acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--raised); border-radius: 6px; }
   .crow:hover .acts, .crow.on .acts { display: flex; }
   .crow .acts span { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--quiet); cursor: pointer; font-size: 13px; }
@@ -665,6 +672,8 @@
       <label class="switch"><input type="checkbox" id="notifyOn" checked><span></span></label></div>
     <div class="toggle-row"><span>Install updates automatically<br><small class="help" style="margin:0">Only when nothing is running and you've been idle a couple of minutes</small></span>
       <label class="switch"><input type="checkbox" id="autoUpd" checked><span></span></label></div>
+    <div class="toggle-row" id="keepRow"><span>Keep running after I close the window<br><small class="help" style="margin:0">Finishes work and installs updates in the background. The shortcut opens it again; Quit closes it fully.</small></span>
+      <label class="switch"><input type="checkbox" id="keepRun" checked><span></span></label></div>
   </div>
   <div class="card tips" data-card="tips">
     <h3>Tips</h3>
@@ -1045,7 +1054,7 @@ function renderConnections(conn, models, cs) {
   const cli = (fullState && fullState.cli) || {versions: {}, update: {state: "idle", log: []}};
   const v = cli.versions || {};
   $("conns").insertAdjacentHTML("beforeend", `<div class="clirow"><span>Claude Code ${esc(v.claude || "?")} · Codex ${esc(v.gpt || "?")}</span>
-    <button class="btn" id="cliUpdate" ${cli.update.state === "running" ? "disabled" : ""} title="Install the newest Claude Code; fixes for connector problems come out often">${cli.update.state === "running" ? "Updating…" : "Update Claude Code"}</button></div>
+    <button class="btn" id="cliUpdate" ${cli.update.state === "running" ? "disabled" : ""} title="Install the newest Claude Code and Codex (GPT); fixes come out often">${cli.update.state === "running" ? "Updating…" : "Update Claude Code & Codex"}</button></div>
     ${cli.update.log.length ? `<div class="setuplog">${cli.update.log.map(esc).join("\n")}</div>` : ""}`);
   $("cliUpdate").onclick = () => { api("/api/update-cli", {}); connSig = ""; };
 }
@@ -1116,10 +1125,14 @@ function renderSidebar(s) {
   const arrived = `${s.project_id}:${s.chat_id}`;
   if (s.project_id && arrived !== lastOpenedFor) openProjects.add(s.project_id);
   lastOpenedFor = arrived;
-  const sig = JSON.stringify([s.chats, s.projects.map(p => [p.id, p.name]), s.chat_id, s.project_id]);
+  const busy = s.busy_chats || {};
+  const sig = JSON.stringify([s.chats, s.projects.map(p => [p.id, p.name]), s.chat_id, s.project_id, busy]);
   if (sig !== sidebarSig && !renaming) {
     sidebarSig = sig;
-    const btn = c => `<div class="crow ${c.id === s.chat_id ? "on" : ""}"><button data-id="${c.id}" class="${c.id === s.chat_id ? "on" : ""}" title="${esc(c.title)}" style="padding-right:${c.id === s.chat_id ? 60 : 10}px">${esc(c.title)}</button>
+    const dotTip = {running: "Still working", question: "Has a question for you", commands: "Wants to run a command",
+                    error: "Paused: a model couldn't reply", done: "Finished while you were away"};
+    const dot = c => busy[c.id] && c.id !== s.chat_id ? `<span class="bdot ${busy[c.id]}" title="${dotTip[busy[c.id]] || ""}"></span>` : "";
+    const btn = c => `<div class="crow ${c.id === s.chat_id ? "on" : ""}"><button data-id="${c.id}" class="${c.id === s.chat_id ? "on" : ""}" title="${esc(c.title)}" style="padding-right:${c.id === s.chat_id ? 60 : 10}px">${dot(c)}${esc(c.title)}</button>
       <div class="acts"><span data-ren="${c.id}" title="Rename">✎</span><span class="del" data-del="${c.id}" title="Delete chat">🗑</span></div></div>`;
     $("projects").innerHTML = s.projects.length ? s.projects.map(p => {
       const chats = s.chats.filter(c => c.project_id === p.id), open = openProjects.has(p.id);
@@ -1275,6 +1288,7 @@ async function poll() {
     if (PHONE && $("search").placeholder.includes("Ctrl")) $("search").placeholder = "Search chats";
     if (lastSyncRev !== null && s.sync_rev !== lastSyncRev) chatId = undefined;   // changes arrived from the other device
     lastSyncRev = s.sync_rev;
+    announceBackground(s);
     $("reconnect").classList.remove("show");
     reconnectAsked = false;
     if (APP && APP.pageOk) APP.pageOk();        // tells the app the page reaches AI Amalgam fine
@@ -1338,6 +1352,8 @@ async function poll() {
       notifyOn = s.notify !== false;
       if (document.activeElement !== $("notifyOn")) $("notifyOn").checked = notifyOn;
       if (document.activeElement !== $("autoUpd")) $("autoUpd").checked = s.auto_update !== false;
+      if (document.activeElement !== $("keepRun")) $("keepRun").checked = s.keep_running !== false;
+      $("keepRow").style.display = s.phone ? "none" : "";
       if (document.activeElement !== $("checkQ")) $("checkQ").checked = s.check_questions !== false;
       if (!collapsedLoaded && s.ui_collapsed) { collapsed = new Set(s.ui_collapsed); collapsedLoaded = true; applyCollapsed(); }
     }
@@ -1786,6 +1802,7 @@ function renderSkills(skills, off, inProject) {
 }
 $("notifyOn").onchange = () => api("/api/settings", {notify: $("notifyOn").checked});
 $("autoUpd").onchange = () => api("/api/settings", {auto_update: $("autoUpd").checked});
+$("keepRun").onchange = () => api("/api/settings", {keep_running: $("keepRun").checked});
 $("checkQ").onchange = () => api("/api/settings", {check_questions: $("checkQ").checked});
 
 // ---------- apps (Blender) ----------
@@ -2053,6 +2070,19 @@ async function send() {
   const r = await api("/api/send", {text});
   if (r && r.error) { toast(r.error); return; }
   if (wasRunning) toast("Sent. They'll read it on their next turn. Press ■ to stop them instead.");
+}
+let busySeen = null;
+function announceBackground(s) {
+  const busy = s.busy_chats || {};
+  if (busySeen !== null) {
+    const words = {question: "has a question for you", commands: "wants to run a command", error: "paused (a model couldn't reply)", done: "finished"};
+    for (const [id, what] of Object.entries(busy)) {
+      if (what === "running" || busySeen[id] === what || +id === s.chat_id) continue;
+      const c = (s.chats || fullState.chats || []).find(x => x.id === +id);
+      toast(`\u201c${c ? c.title : "A chat"}\u201d ${words[what] || "needs you"}.`);
+    }
+  }
+  busySeen = busy;
 }
 function toast(text) {
   const t = $("toast"); t.textContent = text; t.classList.add("show");

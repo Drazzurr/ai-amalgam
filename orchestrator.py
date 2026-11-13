@@ -941,7 +941,11 @@ class Orchestrator:
         path, _, query = request.partition("::")
         path = path.strip().strip('"').strip("'")
         query = query.strip()
-        full = os.path.realpath(os.path.expanduser(path))
+        full = os.path.expanduser(path)
+        if not os.path.isabs(full):
+            # relative to where the models work: the code folder, else Amalgam's workspace
+            full = os.path.join(self.code_dir() or self.workspace, full)
+        full = os.path.realpath(full)
         ok = False
         for root in self.game_roots():
             try:

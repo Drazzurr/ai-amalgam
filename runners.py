@@ -627,7 +627,8 @@ class ClaudeRunner(Runner):
         if not text:
             raise RunnerError("Claude returned an empty reply.")
         if used:
-            self.verified_connectors = getattr(self, "verified_connectors", set()) | used
+            # kept on the class: every chat's Claude (including ones working in the background) shares it
+            type(self).verified_connectors = getattr(type(self), "verified_connectors", set()) | used
         return text
 
     def _diagnose(self, line):
@@ -731,10 +732,12 @@ class ClaudeRunner(Runner):
             if isinstance(found.get("used_percent"), (int, float)) and found["used_percent"] <= 1:
                 found["used_percent"] = found["used_percent"] * 100  # reported as a 0-1 fraction
             # Claude has a 5-hour session window and a weekly window; keep the latest of each.
-            if not hasattr(self, "rate_windows"):
-                self.rate_windows = {}
-            self.rate_windows[str(found.get("window") or "session")] = found
-            self.rate_limit = found
+            # one plan, so one record shared by every Claude runner (chats working in the background have their own)
+            cls = type(self)
+            if "rate_windows" not in cls.__dict__:
+                cls.rate_windows = {}
+            cls.rate_windows[str(found.get("window") or "session")] = found
+            cls.rate_limit = found
             print("Claude rate limit:", found)
 
     def usage(self):

@@ -46,6 +46,7 @@ CODE_SKIP_EXT = (".pyc", ".log")
 GLOBAL_SETTINGS = ("max_rounds", "check_questions", "speed_claude", "speed_gpt", "skills_off")
 PROJECT_SETTINGS = ("speed_claude_project_{}", "speed_gpt_project_{}", "skills_off_project_{}",
                     "allowed_cmds_project_{}", "allow_edits_project_{}")
+FULL_CHECK_EVERY = 6 * 3600        # seconds: even unchanged-looking chats are fully re-merged this often
 MAX_CODE_FOLDER = 300_000_000      # bytes; bigger code folders aren't synced (GitHub isn't for huge assets)
 AUTO_EVERY = 120                    # seconds between automatic syncs while nothing is running
 AUTO_EVERY_AWAY = 600               # ...and while you're not using AI Amalgam (saves the phone's battery)
@@ -107,6 +108,8 @@ class Sync:
         self.on_network_error = None  # set by the app (phone): check and repair the connection
         self._wake = threading.Event()
         self._hashes = {}             # path -> (size, mtime, sha1): unchanged files aren't re-read
+        self._last_full = 0           # last time every chat was fully merged (also the first sync after start)
+        self._pending_chat_fp = {}
         os.makedirs(self.root, exist_ok=True)
         if self.configured():
             self.state["state"] = "idle"
@@ -327,7 +330,7 @@ class Sync:
 
     def _run_once(self):
         """One fetch → merge → upload. Returns False if the upload was beaten by the other device."""
-        self._pending_bases, self._pending_mem = {}, {}
+        self._pending_bases, self._pending_mem, self._pending_chat_fp = {}, {}, {}
         had_remote = self._prepare()
         fmt = _read_json(os.path.join(self.repo_dir, "format.json"), {})
         if fmt.get("format", FORMAT) > FORMAT:
@@ -409,8 +412,18 @@ class Sync:
         local_chats = self.store.sync_chat_index()      # uid -> (local id, updated, edited)
         busy_chat = self.store.uid_of("chats", self.busy_ids()[0]) if self.busy_check() else None
         touched = set()
+        # Chats nobody changed since the last upload are skipped (neither this device's copy nor the
+        # GitHub copy moved). A full merge still runs at start and every few hours, as a safety net.
+        full = time.time() - self._last_full > FULL_CHECK_EVERY
+        saved_fp = {} if full else _read_json(os.path.join(self.base_dir, "chats-fp.json"), {})
+        local_fp = self.store.sync_chat_fingerprints()
+        self._full_now = full
         for uid in set(remote_chats) | set(local_chats):
             if uid in tombs:
+                continue
+            rsha = self._quick_sha(remote_chats[uid]) if uid in remote_chats else None
+            if rsha and uid in local_fp and saved_fp.get(uid) == [rsha, local_fp[uid]]:
+                self._pending_chat_fp[uid] = saved_fp[uid]
                 continue
             r = _read_json(remote_chats[uid], None) if uid in remote_chats else None
             l = self.store.sync_chat(uid, self.workspace) if uid in local_chats else None
@@ -424,6 +437,16 @@ class Sync:
             clean = self._strip_local(merged)
             if r != clean:
                 _write_json(os.path.join(chat_dir, uid + ".json"), clean)
+            if not (local_needs and uid == busy_chat):     # (a skipped import must be retried next time)
+                self._pending_chat_fp[uid] = [self._quick_sha(os.path.join(chat_dir, uid + ".json")), None]
+
+        after_fp = self.store.sync_chat_fingerprints()
+        for uid, v in list(self._pending_chat_fp.items()):
+            if v[1] is None:
+                if uid in after_fp:
+                    v[1] = after_fp[uid]
+                else:
+                    del self._pending_chat_fp[uid]
 
         # settings
         changed += self._merge_settings(tombs)
@@ -697,6 +720,10 @@ class Sync:
 
     def _commit_bases(self):
         """Only after a successful upload do we remember what was synced."""
+        _write_json(os.path.join(self.base_dir, "chats-fp.json"), getattr(self, "_pending_chat_fp", {}))
+        if getattr(self, "_full_now", False):
+            self._last_full = time.time()
+        self._pending_chat_fp = {}
         for uid, base in getattr(self, "_pending_bases", {}).items():
             _write_json(os.path.join(self.base_dir, uid + ".json"), base)
         for uid, lines in getattr(self, "_pending_mem", {}).items():

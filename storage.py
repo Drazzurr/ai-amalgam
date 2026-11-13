@@ -84,7 +84,43 @@ class Store:
                 updated REAL NOT NULL
             )""")
         self._migrate_sync()
+        self._setup_search()
         self._db.commit()
+
+    # ----- full-text search index -----
+
+    def _setup_search(self):
+        """A word index of all messages (SQLite FTS5), kept up to date by triggers. Built once from the
+        existing history (a couple of seconds even for a huge one). Without FTS5 in this Python's
+        SQLite, search simply keeps using the plain scan."""
+        db = self._db
+        try:
+            had = db.execute("SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'").fetchone()
+            db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(text, content='messages', "
+                       "content_rowid='id', tokenize='unicode61 remove_diacritics 2')")
+            db.executescript("""
+                CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+                    INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text); END;
+                CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+                    INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.id, old.text); END;
+                CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF text ON messages BEGIN
+                    INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.id, old.text);
+                    INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text); END;
+            """)
+            if not had:
+                db.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
+            self._fts = True
+        except sqlite3.OperationalError as e:
+            print("Search index not available here (plain search instead):", e)
+            for t in ("messages_fts_ai", "messages_fts_ad", "messages_fts_au"):
+                try:
+                    db.execute(f"DROP TRIGGER IF EXISTS {t}")
+                except sqlite3.Error:
+                    pass
+            self._fts = False
+
+    def _fts_ready(self):
+        return getattr(self, "_fts", False)
 
     def _migrate_sync(self):
         """Ids that are the same on every device (for syncing), plus edit times and deletion records."""
@@ -399,7 +435,60 @@ class Store:
             self._db.commit()
 
     def search(self, query, limit=40):
-        """Chats whose title or messages contain the words (case-insensitive), newest first."""
+        """Chats matching your words, best matches first: chats whose title matches, then chats whose
+        messages contain all the words (any order; word starts count, so "tav" finds "tavern").
+        Falls back to a plain text scan when the index can't answer (or isn't built yet)."""
+        query = query.strip()
+        words = re.findall(r"\w+", query)
+        if not query:
+            return []
+        with self._lock:
+            ready = self._fts_ready()
+        if ready and words:
+            try:
+                return self._search_index(query, words, limit) or self._search_scan(query, limit)
+            except sqlite3.Error as e:
+                print("Search index error, using a plain scan:", e)
+        return self._search_scan(query, limit)
+
+    @staticmethod
+    def _snippet(text, words_or_query):
+        low = text.lower()
+        terms = words_or_query if isinstance(words_or_query, list) else [words_or_query]
+        i = min((low.find(t.lower()) for t in terms if low.find(t.lower()) >= 0), default=0)
+        return ("…" if i > 40 else "") + text[max(0, i - 40): i + 100].replace("\n", " ") + "…"
+
+    def _search_index(self, query, words, limit):
+        match = " ".join('"' + w.replace('"', '') + '"*' for w in words)
+        like = "%" + re.sub(r"([\\%_])", r"\\\1", query) + "%"
+        with self._lock:
+            hits = self._db.execute(
+                "SELECT m.chat_id, MIN(f.score) AS best FROM (SELECT rowid, rank AS score FROM messages_fts "
+                "WHERE messages_fts MATCH ?) f JOIN messages m ON m.id = f.rowid "
+                "GROUP BY m.chat_id ORDER BY best LIMIT ?", (match, limit)).fetchall()
+            titled = self._db.execute("SELECT id FROM chats WHERE title LIKE ? ESCAPE '\\' "
+                                      "ORDER BY updated DESC LIMIT ?", (like, limit)).fetchall()
+            order = [r[0] for r in titled] + [h[0] for h in hits if h[0] not in {t[0] for t in titled}]
+            info = {}
+            for cid in order[:limit]:
+                row = self._db.execute("SELECT title, project_id, updated FROM chats WHERE id = ?", (cid,)).fetchone()
+                if not row:
+                    continue
+                best = self._db.execute(
+                    "SELECT m.text FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
+                    "WHERE messages_fts MATCH ? AND m.chat_id = ? ORDER BY m.id DESC LIMIT 1", (match, cid)).fetchone()
+                info[cid] = (row, best[0] if best else "")
+        out = []
+        for cid in order[:limit]:
+            if cid not in info:
+                continue
+            (title, pid, updated), text = info[cid]
+            out.append({"id": cid, "title": title, "project_id": pid, "updated": updated,
+                        "snippet": self._snippet(text, words) if text else ""})
+        return out
+
+    def _search_scan(self, query, limit=40):
+        """Plain scan: chats whose title or messages contain the exact text (case-insensitive), newest first."""
         # % and _ are wildcards in LIKE: search for them as ordinary characters
         q = "%" + re.sub(r"([\\%_])", r"\\\1", query.strip()) + "%"
         with self._lock:
@@ -408,22 +497,24 @@ class Store:
                 "(SELECT m.text FROM messages m WHERE m.chat_id = c.id AND m.text LIKE ? ESCAPE '\\' ORDER BY m.id DESC LIMIT 1) "
                 "FROM chats c WHERE c.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id "
                 "AND m.text LIKE ? ESCAPE '\\') ORDER BY c.updated DESC LIMIT ?", (q, q, q, limit)).fetchall()
-        out = []
-        for cid, title, pid, updated, text in rows:
-            snippet = ""
-            if text:
-                i = text.lower().find(query.strip().lower())
-                snippet = ("…" if i > 40 else "") + text[max(0, i - 40): i + 100].replace("\n", " ") + "…"
-            out.append({"id": cid, "title": title, "project_id": pid, "updated": updated, "snippet": snippet})
-        return out
+        return [{"id": cid, "title": title, "project_id": pid, "updated": updated,
+                 "snippet": self._snippet(text, query.strip()) if text else ""}
+                for cid, title, pid, updated, text in rows]
 
     def delete_chat(self, chat_id):
         with self._lock:
             self._tomb("chat", [r[0] for r in self._db.execute("SELECT uid FROM chats WHERE id = ?", (chat_id,))])
-            self._db.execute("DELETE FROM attachments WHERE chat_id = ?", (chat_id,))
-            self._db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-            self._db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+            self._forget_chat(chat_id)
             self._db.commit()
+
+    def _forget_chat(self, chat_id):
+        """Remove a chat and what hangs off it. Its file changes stay in the project's history
+        (the Code tab can still undo them); they just no longer point at the chat."""
+        self._db.execute("DELETE FROM attachments WHERE chat_id = ?", (chat_id,))
+        self._db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+        self._db.execute("DELETE FROM doc_edits WHERE chat_id = ?", (chat_id,))
+        self._db.execute("UPDATE code_changes SET chat_id = NULL WHERE chat_id = ?", (chat_id,))
+        self._db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
 
     def move_chat(self, chat_id, project_id):
         with self._lock:
@@ -464,9 +555,7 @@ class Store:
                 elif t["kind"] == "chat":
                     row = self._db.execute("SELECT id FROM chats WHERE uid = ?", (uid,)).fetchone()
                     if row:
-                        self._db.execute("DELETE FROM attachments WHERE chat_id = ?", (row[0],))
-                        self._db.execute("DELETE FROM messages WHERE chat_id = ?", (row[0],))
-                        self._db.execute("DELETE FROM chats WHERE id = ?", (row[0],))
+                        self._forget_chat(row[0])
                         gone += 1
                 elif t["kind"] == "project":
                     row = self._db.execute("SELECT id FROM projects WHERE uid = ?", (uid,)).fetchone()
@@ -512,6 +601,23 @@ class Store:
         with self._lock:
             rows = self._db.execute("SELECT uid, id FROM chats").fetchall()
         return {u: i for u, i in rows}
+
+    def sync_chat_fingerprints(self):
+        """uid -> a short text that changes whenever anything sync carries changes in that chat
+        (messages added or removed, title, project, doc link, settings, attachments)."""
+        with self._lock:
+            chats = self._db.execute("SELECT id, uid, edited, updated, title, project_id, doc_link, allow_edits, "
+                                     "models_off FROM chats").fetchall()
+            msgs = {cid: (n, mx) for cid, n, mx in self._db.execute(
+                "SELECT chat_id, COUNT(*), MAX(id) FROM messages GROUP BY chat_id")}
+            atts = {cid: (n, mx) for cid, n, mx in self._db.execute(
+                "SELECT chat_id, COUNT(*), MAX(id) FROM attachments GROUP BY chat_id")}
+            puids = dict(self._db.execute("SELECT id, uid FROM projects"))
+        out = {}
+        for cid, uid, edited, updated, title, pid, link, edits, off in chats:
+            out[uid] = repr((edited, updated, title, puids.get(pid), link, edits, off,
+                             msgs.get(cid, (0, 0)), atts.get(cid, (0, 0))))
+        return out
 
     def sync_chat(self, uid, workspace):
         import os

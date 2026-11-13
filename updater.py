@@ -20,7 +20,7 @@ VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/VERSION"
 ZIP_URL = f"https://github.com/{REPO}/archive/refs/heads/{BRANCH}.zip"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-KEEP = {"amalgam.db", "amalgam.db-journal", "amalgam.log", "workspace", "__pycache__", ".git"}
+KEEP = {"amalgam.db", "amalgam.db-journal", "amalgam.log", "amalgam.log.1", "workspace", "__pycache__", ".git"}
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
