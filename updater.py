@@ -83,18 +83,38 @@ def install():
         if rel.split("/")[0] in KEEP:
             continue
         dest = os.path.join(APP_DIR, *rel.split("/"))
-        if os.path.exists(dest):                    # keep a copy of what we replace
-            b = os.path.join(backup, *rel.split("/"))
+        new = zf.read(name)
+        if os.path.exists(dest):
+            try:
+                with open(dest, "rb") as f:
+                    if f.read() == new:
+                        continue                    # unchanged: nothing to replace or back up
+            except OSError:
+                pass
+            b = os.path.join(backup, *rel.split("/"))   # keep a copy of what we replace
             os.makedirs(os.path.dirname(b), exist_ok=True)
             shutil.copy2(dest, b)
         else:
             added.append(rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with zf.open(name) as src, open(dest, "wb") as out:
-            shutil.copyfileobj(src, out)
+        with open(dest, "wb") as out:
+            out.write(new)
     with open(os.path.join(backup, ".added-files"), "w", encoding="utf-8") as f:
         f.write("\n".join(added))
+    prune_backups()
     return current_version()
+
+
+def prune_backups(keep=5):
+    """Old update backups pile up (one per update): keep the newest few."""
+    root = _backups_root()
+    try:
+        dirs = sorted((os.path.join(root, d) for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))),
+                      key=os.path.getmtime, reverse=True)
+    except OSError:
+        return
+    for d in dirs[keep:]:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def _backups_root():
@@ -110,7 +130,9 @@ def last_backup():
                 if os.path.isdir(os.path.join(root, d)) and not d.endswith("-restored")]
     except OSError:
         return None, None
-    dirs = [d for d in dirs if os.path.isfile(os.path.join(d, "app.py"))]
+    # newer backups hold only the files an update changed, plus the list of files it added
+    dirs = [d for d in dirs if os.path.isfile(os.path.join(d, ".added-files")) or
+            os.path.isfile(os.path.join(d, "app.py"))]
     if not dirs:
         return None, None
     newest = max(dirs, key=os.path.getmtime)

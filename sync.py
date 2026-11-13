@@ -42,8 +42,9 @@ CODE_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "env",
                   ".idea", ".vscode", ".pytest_cache", ".mypy_cache", "target", "obj", ".gradle"}
 CODE_SKIP_EXT = (".pyc", ".log")
 # settings that follow you between devices (others, like notifications, are per device)
-GLOBAL_SETTINGS = ("max_rounds", "check_questions", "speed_claude", "speed_codex", "skills_off")
-PROJECT_SETTINGS = ("speed_claude_project_{}", "speed_codex_project_{}", "skills_off_project_{}",
+# (GPT's runner key is "gpt", so its speed is saved as speed_gpt)
+GLOBAL_SETTINGS = ("max_rounds", "check_questions", "speed_claude", "speed_gpt", "skills_off")
+PROJECT_SETTINGS = ("speed_claude_project_{}", "speed_gpt_project_{}", "skills_off_project_{}",
                     "allowed_cmds_project_{}", "allow_edits_project_{}")
 MAX_CODE_FOLDER = 300_000_000      # bytes; bigger code folders aren't synced (GitHub isn't for huge assets)
 AUTO_EVERY = 120                    # seconds between automatic syncs while nothing is running

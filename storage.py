@@ -190,6 +190,13 @@ class Store:
                                     (chat_id, rows[0][0])).fetchone()[0] if rows else 0
         return [dict(zip(cols, r)) for r in rows], left
 
+    def last_user_id(self, chat_id):
+        """Id of the newest message you wrote in a chat (0 if none)."""
+        with self._lock:
+            row = self._db.execute("SELECT MAX(id) FROM messages WHERE chat_id = ? AND kind = 'user'",
+                                   (chat_id,)).fetchone()
+        return row[0] or 0
+
     def count_turns(self, speaker, since):
         with self._lock:
             row = self._db.execute(
@@ -200,7 +207,9 @@ class Store:
     def chats(self):
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, title, updated, project_id FROM chats ORDER BY updated DESC LIMIT 300"
+                # the 300 most recent, plus every chat in a project (so older project chats don't vanish)
+                "SELECT id, title, updated, project_id FROM chats WHERE project_id IS NOT NULL "
+                "OR id IN (SELECT id FROM chats ORDER BY updated DESC LIMIT 300) ORDER BY updated DESC"
             ).fetchall()
         return [dict(zip(("id", "title", "updated", "project_id"), r)) for r in rows]
 
@@ -391,13 +400,14 @@ class Store:
 
     def search(self, query, limit=40):
         """Chats whose title or messages contain the words (case-insensitive), newest first."""
-        q = f"%{query.strip()}%"
+        # % and _ are wildcards in LIKE: search for them as ordinary characters
+        q = "%" + re.sub(r"([\\%_])", r"\\\1", query.strip()) + "%"
         with self._lock:
             rows = self._db.execute(
                 "SELECT c.id, c.title, c.project_id, c.updated, "
-                "(SELECT m.text FROM messages m WHERE m.chat_id = c.id AND m.text LIKE ? ORDER BY m.id DESC LIMIT 1) "
-                "FROM chats c WHERE c.title LIKE ? OR EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id AND m.text LIKE ?) "
-                "ORDER BY c.updated DESC LIMIT ?", (q, q, q, limit)).fetchall()
+                "(SELECT m.text FROM messages m WHERE m.chat_id = c.id AND m.text LIKE ? ESCAPE '\\' ORDER BY m.id DESC LIMIT 1) "
+                "FROM chats c WHERE c.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.id "
+                "AND m.text LIKE ? ESCAPE '\\') ORDER BY c.updated DESC LIMIT ?", (q, q, q, limit)).fetchall()
         out = []
         for cid, title, pid, updated, text in rows:
             snippet = ""

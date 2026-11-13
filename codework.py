@@ -14,6 +14,7 @@ from gitfind import find_git
 import subprocess
 import sys
 import threading
+import time
 
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
@@ -25,6 +26,8 @@ MAX_FILES_LISTED = 3000
 MAX_FILE_VIEW = 400_000          # bytes shown in the file viewer
 COMMAND_TIMEOUT = 120            # seconds per approved command
 MAX_OUTPUT = 12_000              # characters of command output kept
+MAX_CHECKPOINT_FILE = 50_000_000  # bytes; bigger files (game archives, big textures, videos) aren't checkpointed
+BIG_SCAN_EVERY = 120             # seconds between looks for new big files
 
 
 def check_code_dir(path):
@@ -189,11 +192,44 @@ class Checkpoints:
             raise RuntimeError((r.stderr.decode("utf-8", errors="replace") or out).strip()[:500])
         return out
 
+    def _exclude_big_files(self, project_id, work_tree):
+        """Leave very big files out of checkpoints: copying a few GB of game archives into the
+        checkpoint history before every model turn would stall the chat. Undo doesn't cover them."""
+        seen = self.__dict__.setdefault("_big_scan", {})
+        key = (project_id, work_tree)
+        if time.time() - seen.get(key, 0) < BIG_SCAN_EVERY:
+            return
+        seen[key] = time.time()
+        big = []
+        for dirpath, dirnames, filenames in os.walk(work_tree):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".git")]
+            for name in filenames:
+                full = os.path.join(dirpath, name)
+                try:
+                    if os.path.getsize(full) > MAX_CHECKPOINT_FILE:
+                        rel = os.path.relpath(full, work_tree).replace("\\", "/")
+                        big.append("/" + re.sub(r"([\\*?\[\]!# ])", r"\\\1", rel))
+                except OSError:
+                    pass
+        path = os.path.join(self.root, f"project-{project_id}.git", "info", "exclude")
+        text = "\n".join(EXCLUDES + ["# over 50 MB, left out of checkpoints"] + sorted(big)) + "\n"
+        try:
+            with open(path, encoding="utf-8") as f:
+                if f.read() == text:
+                    return
+        except OSError:
+            pass
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
     def checkpoint(self, project_id, work_tree, message):
         """Save the folder's current state; returns the checkpoint id (unchanged if nothing changed)."""
         if not self.git:
             return None
         with self._lock:
+            self._git(project_id, work_tree, "rev-parse", "--git-dir", check=False)   # sets up the history once
+            self._exclude_big_files(project_id, work_tree)
             self._git(project_id, work_tree, "add", "-A", ".")
             head = self._git(project_id, work_tree, "rev-parse", "--verify", "-q", "HEAD", check=False).strip()
             if head and not self._git(project_id, work_tree, "diff", "--cached", "--name-only", "HEAD").strip():

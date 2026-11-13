@@ -337,6 +337,26 @@ class App:
             self.net.away_check = self.away
             self.sync.on_network_error = self.net.poke
 
+    def _cached(self, key, ttl, fn):
+        """A slow-to-work-out value for the window's frequent status checks: computed once, then
+        refreshed in the background at most every `ttl` seconds (the check never waits on it again)."""
+        cache = self.__dict__.setdefault("_cache", {})
+        c = cache.get(key)
+        if c is None:
+            c = cache[key] = [fn(), time.time(), False]
+        elif time.time() - c[1] > ttl and not c[2]:
+            c[2] = True
+
+            def work():
+                try:
+                    c[0] = fn()
+                except Exception as e:
+                    print(f"Background refresh of {key} failed:", e)
+                finally:
+                    c[1], c[2] = time.time(), False
+            threading.Thread(target=work, daemon=True).start()
+        return c[0]
+
     def _after_import(self, chat_ids):
         """Another device's changes just arrived. Refresh what the open chat is waiting on."""
         o = self.orch
@@ -475,6 +495,7 @@ class App:
     def idle_for_update(self):
         o = self.orch
         return (o.status != "running" and not o.pending_commands and getattr(o, "_cmd_proc", None) is None
+                and not o.pending_files      # files you attached but haven't sent yet
                 and time.time() - getattr(self, "last_activity", 0) >= self.IDLE_BEFORE_UPDATE
                 and not (self.sync.state or {}).get("busy"))
 
@@ -527,6 +548,7 @@ class App:
                 old = self.updater.rollback()
                 print("Went back to version", old)
                 self.update = dict(self.update, state="restarting", installed=old)
+                self._remember_open_chat()
                 self.relaunch()
                 time.sleep(1.5)
                 self.quit()
@@ -534,6 +556,20 @@ class App:
                 self.update = dict(self.update, state="idle", error=f"Couldn't go back: {e}")
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _remember_open_chat(self):
+        """Restarting for an update: come back to the chat you were in, not a blank new one."""
+        self.store.set_setting("reopen_chat", str(self.orch.chat_id or ""))
+
+    def _reopen_chat(self):
+        try:
+            cid = int(self.store.get_setting("reopen_chat", "") or 0)
+        except ValueError:
+            cid = 0
+        if cid:
+            self.store.set_setting("reopen_chat", "")
+            if self.store.chat_title(cid) is not None:
+                self.orch.open_chat(cid)
 
     def install_update(self):
         if self.update.get("state") == "installing":
@@ -545,6 +581,7 @@ class App:
                 new = self.updater.install()
                 print("Installed version", new)
                 self.update = dict(self.update, state="restarting", installed=new)
+                self._remember_open_chat()
                 self.relaunch()
                 time.sleep(1.5)
                 self.quit()
@@ -637,6 +674,7 @@ class App:
 
         def work():
             ok = gt.install(lambda t: (print("Game helpers:", t), self.games["log"].append(t)))
+            self.__dict__.get("_cache", {}).pop("helpers", None)     # show the new tools right away
             self.games["state"] = "done" if ok else "failed"
         threading.Thread(target=work, daemon=True).start()
 
@@ -654,8 +692,11 @@ class App:
             self.refresh_connections()
         import gamefiles.tools as gt
         games = {"detected": self.games["detected"], "user": self.games.get("user", []),
-                 "helpers": gt.installed(), "state": self.games["state"], "log": self.games["log"][-14:]}
-        return {"games": games, "blender": {"path": path, "version": ver, "listening": self.apps.blender_listening(0.2),
+                 "helpers": self._cached("helpers", 30, gt.installed), "state": self.games["state"],
+                 "log": self.games["log"][-14:]}
+        # a refused connection to a closed port takes Windows a while: check in the background
+        listening = self._cached("blender_up", 3, lambda: self.apps.blender_listening(0.2))
+        return {"games": games, "blender": {"path": path, "version": ver, "listening": listening,
                             "claude": conn.get("claude", False), "gpt": conn.get("gpt", False),
                             "on": self.orch.blender_on, "setup": {"state": setup.state, "log": setup.log[-12:]}}}
 
@@ -828,6 +869,8 @@ class App:
                     q = parse_qs(url.query)
                     if q.get("focused", ["0"])[0] == "1":
                         app.focused_at = time.time()
+                    if q.get("draft", ["0"])[0] == "1":
+                        app.last_activity = time.time()   # you're typing a message: don't restart for an update
                     if q.get("lite", ["0"])[0] != "1" and app.sync.rev != app._sync_rev_seen:
                         app._sync_rev_seen = app.sync.rev
                         app._reload_settings()
@@ -853,14 +896,14 @@ class App:
                     app.refresh_usage(force=app.orch.turn_seq != app._last_status)
                     app._last_status = app.orch.turn_seq
                     state["usage"] = app.usage
-                    state["update"] = dict(app.update, rollback=app.updater.last_backup()[1])
+                    state["update"] = dict(app.update, rollback=app._cached("rollback", 60, lambda: app.updater.last_backup()[1]))
                     state["notify"] = app.store.get_setting("notify", "1") == "1"
                     state["auto_update"] = app.store.get_setting("auto_update", "1") == "1"
                     state["app_latest"] = app.android_version()
                     if app.phone and getattr(app, "announcer", None):
                         state["linux_start"] = app.announcer.timing()
                     state["check_questions"] = app.orch.check_questions
-                    state["skills"] = list_skills()
+                    state["skills"] = app._cached("skills", 20, list_skills)
                     state["skills_off"] = app.orch.skills_off()
                     state["apps"] = app.apps_view()
                     state["cli"] = {"versions": getattr(app, "cli_versions", {}),
@@ -1033,6 +1076,7 @@ class App:
                     app.store.delete_chat(cid)
                     shutil.rmtree(os.path.join(WORKSPACE, "attachments", f"chat-{cid}"), ignore_errors=True)
                     shutil.rmtree(os.path.join(WORKSPACE, "extracted", f"chat-{cid}"), ignore_errors=True)
+                    shutil.rmtree(os.path.join(WORKSPACE, "images", f"chat-{cid}"), ignore_errors=True)
                 elif path == "/api/chat/move":
                     pid = data.get("project_id")
                     app.store.move_chat(int(data["chat_id"]), int(pid) if pid else None)
@@ -1224,6 +1268,10 @@ class App:
                 return self.quit()
 
     def run(self):
+        try:
+            self._reopen_chat()
+        except Exception as e:
+            print("Couldn't reopen the last chat:", e)
         with open(LOCK_FILE, "w", encoding="utf-8") as f:
             json.dump({"port": self.port, "token": self.token, "pid": os.getpid()}, f)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()

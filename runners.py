@@ -100,6 +100,17 @@ def codex_home():
     return os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
 
 
+def _tail_lines(path, max_bytes):
+    """The complete lines in the last max_bytes of a file (session logs can be many MB)."""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - max_bytes))
+        data = f.read()
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    return lines[1:] if size > max_bytes else lines     # the first one is cut off
+
+
 def read_codex_rate_limits(max_files=12):
     """Find the newest rate-limit snapshot Codex wrote to its session logs.
 
@@ -117,11 +128,16 @@ def read_codex_rate_limits(max_files=12):
                 except OSError:
                     pass
     for _mtime, path in sorted(files, reverse=True)[:max_files]:
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-        except OSError:
-            continue
+        lines = []
+        # the snapshot is usually near the end: read more only when it isn't
+        for chunk in (256 * 1024, 4 * 1024 * 1024, 64 * 1024 * 1024):
+            try:
+                lines = _tail_lines(path, chunk)
+            except OSError:
+                lines = []
+                break
+            if any("rate_limits" in l for l in lines) or os.path.getsize(path) <= chunk:
+                break
         for line in reversed(lines):
             if "rate_limits" not in line:
                 continue

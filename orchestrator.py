@@ -87,7 +87,7 @@ MAX_CHOICES = 6
 OPTION_RE = re.compile(r"\b(Option\s+[A-Z1-9])\b\s*(?:\(([^()]{1,160})\)|[:\-\u2013\u2014]\s*([^,;?()]{1,120}?)(?=\s*(?:,|;|\?|\bor\b|$)))?",
                        re.IGNORECASE)
 YES_NO_RE = re.compile(r"^\s*(should|shall|do|does|did|can|could|would|will|is|are|may|approve|ok|okay|happy)\b", re.IGNORECASE)
-REMEMBER_RE = re.compile(r"^\W*REMEMBER\s*:\s*(.+?)\s*$", re.IGNORECASE)
+REMEMBER_RE = re.compile(r"^\W*REMEMBER\s*:\s*(.+?)\s*$")
 MEMORY_CHARS = 6000
 
 # Condensing: once older messages (beyond the most recent ones) add up to this many characters,
@@ -155,10 +155,12 @@ CODE_ROLE_REVIEWER = ("You are the reviewer: you can read files and run read-onl
 CODE_ROLE_NO_EDITOR = ("Nobody can edit files right now (the editor, Claude, is unavailable). Read and review, and "
                        "describe exact changes (file and code) for the user to apply or for later.")
 
-TITLE_RE = re.compile(r"^\W*TITLE\s*:\s*(.+?)\s*$", re.IGNORECASE)
+# Protocol lines are matched in CAPITALS only (as the prompt asks), so ordinary prose such as
+# "Run: the tests first" or "Remember: ..." never turns into a command, a file read or a memory.
+TITLE_RE = re.compile(r"^\W*TITLE\s*:\s*(.+?)\s*$")
 TITLE_LINE = ("\nThis is the first reply in a new chat: add one line \"TITLE: <a 3 to 6 word title for this chat>\" "
               "just above your last line.\n")
-READ_RE = re.compile(r"^\W*READ\s*:\s*(.+?)\s*$", re.IGNORECASE)
+READ_RE = re.compile(r"^\W*READ\s*:\s*(.+?)\s*$")
 MAX_READS = 4
 GAMEFILES_LINE = """
 === GAME FILES ===
@@ -167,7 +169,7 @@ You can read game files directly (archives, plugins, packages, meshes, textures,
 Extracted files and converted images (.png) go to {out}; READ those paths next, and open .png files with your file reader to see them.
 Folders you may read: {folders}. Never change files in game folders. The game-files skill has details for each game.
 """
-RUN_RE = re.compile(r"^\W*RUN\s*:\s*(.+?)\s*$", re.IGNORECASE)
+RUN_RE = re.compile(r"^\W*RUN\s*:\s*(.+?)\s*$")
 MAX_RUNS = 3
 
 DOC_LINE = """
@@ -246,11 +248,22 @@ def guess_choices(question):
     return []
 
 
+def fenced(lines):
+    """Yield (line, inside a ``` code block?) so examples in code blocks aren't taken as requests."""
+    inside = False
+    for line in lines:
+        if line.lstrip().startswith(("```", "~~~")):
+            inside = not inside
+            yield line, True
+        else:
+            yield line, inside
+
+
 def split_runs(text):
     """Pull 'RUN: command' lines out of a reply. Returns (text without them, [commands])."""
     keep, runs = [], []
-    for line in text.splitlines():
-        m = RUN_RE.match(line)
+    for line, in_code in fenced(text.splitlines()):
+        m = None if in_code else RUN_RE.match(line)
         if m:
             cmd = m.group(1).strip().strip("`").strip()
             if cmd and cmd not in runs:
@@ -412,9 +425,16 @@ class Orchestrator:
                 self.chat_id = self.store.new_chat(text.splitlines()[0], self.project_id)
                 self.store.set_chat_settings(self.chat_id, **self.pending_chat_settings)
             if self.pending_files:
+                # taken off the list first: a file that fails here must never block your next message
+                files, self.pending_files = self.pending_files, []
                 names = []
-                for f in self.pending_files:
-                    rel = self._file_into_chat(f)
+                for f in files:
+                    try:
+                        rel = self._file_into_chat(f)
+                    except OSError as e:
+                        print("Couldn't attach", f["name"], ":", e)
+                        names.append(f"{f['name']} (couldn't attach: {e.strerror or e})")
+                        continue
                     self.store.add_attachment(self.chat_id, f["name"], rel, f["size"])
                     names.append(f["name"])
                     if f["name"].lower().endswith((".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2")):
@@ -423,7 +443,6 @@ class Orchestrator:
                             self.store.add_attachment(self.chat_id, name, path, size)
                         if note:
                             names[-1] += f" ({note})"
-                self.pending_files = []
                 text += "\n\n" + "\n".join(f"📎 {n}" for n in names)
             if self.pending_commands:
                 self.store.add(self.chat_id, "Amalgam", "system",
@@ -481,18 +500,12 @@ class Orchestrator:
             self._start_run("")
         return True
 
-    def _last_user_id(self):
-        for m in reversed(self.store.messages(self.chat_id)):
-            if m["kind"] == "user":
-                return m["id"]
-        return None
-
     def regenerate(self):
         """Throw away everything after your last message and let the models answer it again."""
         if self.chat_id is None or self.status == "running":
             return "Wait for the models to finish, or press Stop first."
         last = self._last_user_id()
-        if last is None:
+        if not last:      # e.g. a chat that only has a file you ran: nothing for the models to answer
             return "There's nothing to regenerate yet."
         self.store.delete_messages(self.chat_id, after_id=last)
         self.pending_commands = None
@@ -505,7 +518,7 @@ class Orchestrator:
         if self.chat_id is None or self.status == "running":
             return "Wait for the models to finish, or press Stop first."
         last = self._last_user_id()
-        if last is None:
+        if not last:
             return "There's no message to edit."
         self.store.delete_messages(self.chat_id, after_id=last - 1, from_id=last)
         self.pending_commands = None
@@ -539,29 +552,42 @@ class Orchestrator:
         out, total = [], 0
         try:
             if zipfile.is_zipfile(src):
-                z = zipfile.ZipFile(src)
+                z = arch = zipfile.ZipFile(src)
                 members = [(i.filename, i.file_size, lambda i=i: z.open(i)) for i in z.infolist() if not i.is_dir()]
             else:
-                t = tarfile.open(src)
+                t = arch = tarfile.open(src)
                 members = [(m.name, m.size, lambda m=m: t.extractfile(m)) for m in t.getmembers() if m.isfile()]
         except Exception as e:
             return [], f"couldn't unzip: {e}"
-        skipped = 0
+        import shutil
+        skipped, damaged = 0, 0
         for name, size, opener in members:
             parts = [p for p in re.split(r"[\\/]+", name) if p not in ("", ".", "..")]
             if not parts or parts[0] == "__MACOSX" or parts[-1].startswith("._"):
                 continue
+            # no drive letters ("C:") or characters Windows can't use in names: everything stays inside dest
+            parts = [re.sub(r'[<>:"|?*\x00-\x1f]', "_", p).rstrip(" .") or "_" for p in parts]
             if len(out) >= max_files or total + size > max_bytes:
                 skipped += 1
                 continue
             target = os.path.join(dest, *parts)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            with opener() as fsrc, open(target, "wb") as fdst:
-                import shutil
-                shutil.copyfileobj(fsrc, fdst)
+            try:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with opener() as fsrc, open(target, "wb") as fdst:
+                    shutil.copyfileobj(fsrc, fdst)
+            except Exception as e:      # a damaged or unreadable file: skip it, keep the rest
+                print("Couldn't unzip", name, ":", e)
+                damaged += 1
+                try:
+                    os.remove(target)
+                except OSError:
+                    pass
+                continue
             total += size
             out.append(("/".join(parts), os.path.relpath(target, self.workspace).replace("\\", "/"), size))
-        note = f"unzipped {len(out)} files" + (f", skipped {skipped} (too many or too big)" if skipped else "")
+        arch.close()       # Windows keeps the archive locked while it's open
+        note = f"unzipped {len(out)} files" + (f", skipped {skipped} (too many or too big)" if skipped else "") + \
+            (f", {damaged} damaged file{'s' if damaged != 1 else ''} left out" if damaged else "")
         return out, note
 
     def _file_into_chat(self, f):
@@ -845,8 +871,8 @@ class Orchestrator:
         reply, choices = split_choices(reply)
         reply, runs = split_runs(reply) if code_dir else (reply, [])
         reads, kept_r = [], []
-        for line in reply.splitlines():
-            m = READ_RE.match(line)
+        for line, in_code in fenced(reply.splitlines()):
+            m = None if in_code else READ_RE.match(line)
             if m and len(reads) < MAX_READS:
                 reads.append(m.group(1).strip().strip("`"))
             elif not m:
@@ -1102,6 +1128,7 @@ class Orchestrator:
         return code == 0 and not timed_out
 
     def _commands_then_continue(self, pc, ok):
+        my_run = getattr(self, "_run_no", 0)
         try:
             code_dir = self.code_dir()
             if not ok:
@@ -1189,10 +1216,8 @@ class Orchestrator:
         return None
 
     def _last_user_id(self):
-        if not self.chat_id:
-            return 0
-        ids = [m["id"] for m in self.store.messages(self.chat_id) if m["kind"] == "user"]
-        return ids[-1] if ids else 0
+        """Id of your newest message in the open chat (0 if you haven't written anything there)."""
+        return self.store.last_user_id(self.chat_id) if self.chat_id else 0
 
     def _user_spoke(self):
         """You sent a message after the current model started its turn."""

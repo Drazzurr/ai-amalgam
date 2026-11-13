@@ -1260,7 +1260,8 @@ async function poll() {
     const lite = Date.now() - lastFull < 2500 && lastStatus === "running";
     // ask "anything new?" with the last copy's tag; a full redraw at least every 30 s keeps times fresh
     const tag = !lite && fullState.tag && Date.now() - lastRendered < 30000 ? `&tag=${fullState.tag}` : "";
-    const got = await api(`/api/state?after=${lastId}&tail=80&focused=${document.hasFocus() ? 1 : 0}${lite ? "&lite=1" : ""}${tag}`);
+    const draft = $("input").value.trim() || (pendingPaths && pendingPaths.length) ? "&draft=1" : "";   // typing: hold automatic updates
+    const got = await api(`/api/state?after=${lastId}&tail=80&focused=${document.hasFocus() ? 1 : 0}${lite ? "&lite=1" : ""}${tag}${draft}`);
     if (got.same) {
       failures = 0; lastFull = Date.now();
       setTimeout(poll, lastStatus === "running" ? 200 : (document.hidden && PHONE ? 3000 : 800));
