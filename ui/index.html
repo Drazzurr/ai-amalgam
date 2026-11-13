@@ -2348,6 +2348,27 @@ function renderApps(apps) {
       <button class="btn ${h.lslib && h.wolvenkit ? "" : "go"}" id="gameHelpers" ${g.state === "running" ? "disabled" : ""}>${g.state === "running" ? "Installing…" : "Install helpers"}</button></div>
     ${g.log && g.log.length ? `<div class="setuplog">${g.log.map(esc).join("\n")}</div>` : ""}
     <p class="help" style="margin:8px 0 0">Skyrim, BG3, Cyberpunk, Witcher 3, Mass Effect and Dragon Age files: archives, plugins, packages, meshes, textures, text. Read-only.</p></div>`);
+  const md = apps.mods;   // mod lists: the PC app only (the phone's server never sends it)
+  if (md && !md.error) {
+    const mo2 = md.mo2 || [], vx = md.vortex || [], tl = md.tools || {}, cl = md.crash_logs || [];
+    const tline = ["LOOT", "xEdit", "Wrye Bash", "BodySlide", "Nemesis", "Pandora"].filter(n => n in tl || n === "LOOT" || n === "xEdit")
+      .map(n => `<span class="${tl[n] ? "ok" : "no"}" title="${esc(tl[n] || "not found")}">${tl[n] ? "●" : "○"}</span> ${n}`).join("&nbsp; ");
+    const ago = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 60 ? m + " min ago" : m < 2880 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " days ago"; };
+    $("appsBox").insertAdjacentHTML("beforeend", `<div class="app" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <div><b>Mod lists</b><div class="st">The models can check your Mod Organizer 2 and Vortex setups (read-only).</div></div>
+      <div style="margin-top:6px">${mo2.map(i => `<div class="gamerow" title="${esc(i.folder)}"><span><b>MO2 · ${esc(i.name)}</b> · ${esc(i.game || "")} · ${i.profiles.length} profile${i.profiles.length === 1 ? "" : "s"}</span></div>`).join("")}
+        ${vx.map(v => `<div class="gamerow" title="${esc(v.folder)}"><span><b>Vortex</b> · ${esc(v.game)}</span></div>`).join("")}
+        ${!mo2.length && !vx.length ? `<div class="st">No mod manager found yet. For a portable Mod Organizer 2, add its folder under Game files.</div>` : ""}</div>
+      <div class="st" style="margin-top:6px">Tools: ${tline}</div>
+      ${cl.length ? `<div class="st" title="${esc(cl[0].path)}">Newest crash log: ${ago(cl[0].time)}</div>` : ""}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"><button class="btn" data-modsc="modcheck">Check my mods</button>
+        <button class="btn" data-modsc="modlist">Build a mod list</button></div>
+      <p class="help" style="margin:8px 0 0">Skyrim SE/AE, LE and VR: missing masters, load order, SKSE and Address Library versions, conflicts and crash logs. Mods are never downloaded or changed for you.</p></div>`);
+    $("appsBox").querySelectorAll("[data-modsc]").forEach(x => x.onclick = () => {
+      const box = $("input"); box.value = "/" + x.dataset.modsc + " " + box.value.replace(/^\/\S+\s*/, ""); box.focus();
+      box.dispatchEvent(new Event("input", {bubbles: true}));
+    });
+  }
   $("gameAdd").onclick = async () => { const r = await api("/api/games/add", {}); if (r.error) alert(r.error); appsSig = ""; };
   $("gameHelpers").onclick = () => api("/api/games/install-helpers", {});
   $("appsBox").querySelectorAll("[data-gdel]").forEach(x => x.onclick = () => { api("/api/games/remove", {path: x.dataset.gdel}); appsSig = ""; });

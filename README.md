@@ -221,6 +221,24 @@ chat, so the models can help fix any problems.
 The helpers (lz4 for compressed Skyrim SE archives, LSLib, WolvenKit) come from **Apps → Game files → Install
 helpers**. wcc_lite comes with REDkit (free on Steam); Amalgam finds it in your Steam libraries.
 
+## Mod lists (PC only)
+
+The models can look at your mod manager setup and help fix it. This is a PC feature; the phone app doesn't have it.
+
+- **Apps → Mod lists** shows what Amalgam found: Mod Organizer 2 instances (installed ones, and portable ones in
+  folders you added under **Game files**), Vortex, tools such as LOOT and xEdit, and how old your newest crash log is.
+- **/modcheck** (or **Check my mods**): the models check the load order and setup and explain your newest crash
+  log. They look for missing or misplaced masters, Skyrim LE plugins in Special Edition, the plugin limits, SKSE and
+  Address Library versions that don't match the game, errors in SKSE's log, and file conflicts between mods. Name a
+  setup to check a particular one, e.g. `/modcheck Skyrim/Survival` or `/modcheck vortex`.
+- **/modlist** (or **Build a mod list**): the models ask what you want, then build a list in install order with
+  Nexus links, requirements, which FOMOD options to pick and known conflicts. One drafts, the other checks it.
+- Crash logs need a crash logger (for example *Crash Logger SSE AE VR*); the models suggest one if there's none.
+- Everything is read-only. Amalgam never downloads or changes mods: you download from Nexus in your browser or mod
+  manager. Sorting with LOOT or cleaning with xEdit changes files, so the models ask first (in a project with a code
+  folder, through the usual **Approve and run**), or tell you what to click.
+- Skyrim Special Edition/AE, Skyrim LE and Skyrim VR for now.
+
 ## Managing chats
 - Hover a chat in the sidebar: ✎ renames it, 🗑 deletes it.
 - The project menu next to the chat title moves the open chat into (or out of) a project.
@@ -325,6 +343,7 @@ backed up in `%LOCALAPPDATA%\AIAmalgam\backups`.
 - `orchestrator.py` – the turn loop: who speaks next, the prompt each model gets, pauses on NEED USER.
 - `runners.py` – runs `claude -p` and `codex exec` with your sign-ins; both are talk-only (no file edits).
 - `storage.py` – saves chats in `amalgam.db`.
+- `modlists/` – the mod-list checks (PC only): finds MO2/Vortex setups, checks load orders, reads crash logs.
 - `ui/index.html` – the chat window.
 - `workspace/` – the empty folder the tools run in.
 - `amalgam.ico` – the app icon. `amalgam.log` – a log of each run, for troubleshooting.

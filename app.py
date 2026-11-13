@@ -355,6 +355,7 @@ class App:
         self._set_all("blender_path", apps.find_blender()[0])
         self.games = {"detected": {}, "state": "idle", "log": []}
         self._load_game_folders()
+        self._set_all("mods_on", not self.phone)    # mod-list checks are a PC feature
         # The phone's Terminal forwards the port from its Linux system to Chrome, so listen there too.
         # Every request still needs the key (or the pairing code to get it).
         self._host = "0.0.0.0" if self.phone else "127.0.0.1"
@@ -937,9 +938,30 @@ class App:
                  "log": self.games["log"][-14:]}
         # a refused connection to a closed port takes Windows a while: check in the background
         listening = self._cached("blender_up", 3, lambda: self.apps.blender_listening(0.2))
-        return {"games": games, "blender": {"path": path, "version": ver, "listening": listening,
+        view = {"games": games}
+        if not self.phone:
+            view["mods"] = self._mods_view()
+        return {**view, "blender": {"path": path, "version": ver, "listening": listening,
                             "claude": conn.get("claude", False), "gpt": conn.get("gpt", False),
                             "on": self.orch.blender_on, "setup": {"state": setup.state, "log": setup.log[-12:]}}}
+
+    def _mods_view(self):
+        """Mod managers and tools for the Apps card (PC only). Looking for them reads a lot of
+        folders, so it runs in the background; the card shows it once it's ready."""
+        c = self.__dict__.setdefault("_mods_c", {"value": None, "at": 0, "busy": False})
+        if not c["busy"] and time.time() - c["at"] > 30:
+            c["busy"] = True
+
+            def work():
+                try:
+                    import modlists
+                    c["value"] = modlists.summary(list(self.orch.game_folders or []))
+                except Exception as e:
+                    c["value"] = {"error": str(e)}
+                finally:
+                    c["at"], c["busy"] = time.time(), False
+            threading.Thread(target=work, daemon=True).start()
+        return c["value"]
 
     def connections_view(self):
         """Connections, corrected by what actually worked in chats: a connector a model used
@@ -1149,7 +1171,7 @@ class App:
                     state["check_questions"] = app.orch.check_questions
                     state["skills"] = app._cached("skills", 20, list_skills)
                     import shortcuts
-                    state["shortcuts"] = shortcuts.all_shortcuts(app.store)
+                    state["shortcuts"] = shortcuts.all_shortcuts(app.store, app.phone)
                     state["skills_off"] = app.orch.skills_off()
                     state["apps"] = app.apps_view()
                     state["cli"] = {"versions": getattr(app, "cli_versions", {}),
