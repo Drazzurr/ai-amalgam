@@ -83,6 +83,12 @@ class Store:
                 created REAL NOT NULL,
                 updated REAL NOT NULL
             )""")
+        self._db.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, project_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'queued', chat_id INTEGER, position REAL NOT NULL,
+                created REAL NOT NULL, started REAL NOT NULL DEFAULT 0, finished REAL NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '')""")
         self._migrate_sync()
         self._setup_search()
         self._db.commit()
@@ -409,6 +415,65 @@ class Store:
             rows = self._db.execute("SELECT id, name, path, size FROM attachments WHERE chat_id = ? ORDER BY id",
                                     (chat_id,)).fetchall()
         return [dict(zip(("id", "name", "path", "size"), r)) for r in rows]
+
+    # ----- job queue (this device only) -----
+
+    JOB_COLS = ("id", "text", "project_id", "status", "chat_id", "position", "created", "started", "finished", "note")
+
+    def add_job(self, text, project_id=None):
+        now = time.time()
+        with self._lock:
+            top = self._db.execute("SELECT COALESCE(MAX(position), 0) FROM jobs").fetchone()[0]
+            cur = self._db.execute("INSERT INTO jobs (text, project_id, position, created) VALUES (?, ?, ?, ?)",
+                                   (text, project_id, top + 1, now))
+            self._db.commit()
+            return cur.lastrowid
+
+    def jobs(self):
+        with self._lock:
+            rows = self._db.execute(f"SELECT {', '.join(self.JOB_COLS)} FROM jobs ORDER BY position, id").fetchall()
+        return [dict(zip(self.JOB_COLS, r)) for r in rows]
+
+    def job(self, job_id):
+        with self._lock:
+            row = self._db.execute(f"SELECT {', '.join(self.JOB_COLS)} FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return dict(zip(self.JOB_COLS, row)) if row else None
+
+    def update_job(self, job_id, **fields):
+        fields = {k: v for k, v in fields.items() if k in self.JOB_COLS and k != "id"}
+        if not fields:
+            return
+        with self._lock:
+            self._db.execute(f"UPDATE jobs SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?",
+                             list(fields.values()) + [job_id])
+            self._db.commit()
+
+    def delete_job(self, job_id):
+        with self._lock:
+            self._db.execute("DELETE FROM jobs WHERE id = ? AND status != 'running'", (job_id,))
+            self._db.commit()
+
+    def clear_finished_jobs(self):
+        with self._lock:
+            self._db.execute("DELETE FROM jobs WHERE status IN ('done', 'stopped', 'failed')")
+            self._db.commit()
+
+    def move_job(self, job_id, direction):
+        """Swap a queued job with the queued job above (direction -1) or below (+1) it."""
+        with self._lock:
+            rows = self._db.execute("SELECT id, position FROM jobs WHERE status = 'queued' ORDER BY position, id").fetchall()
+            ids = [r[0] for r in rows]
+            if job_id not in ids:
+                return
+            i = ids.index(job_id)
+            j = i + (1 if direction > 0 else -1)
+            if 0 <= j < len(ids):
+                (a, pa), (b, pb) = rows[i], rows[j]
+                if pa == pb:
+                    pb = pa + (1 if j > i else -1)
+                self._db.execute("UPDATE jobs SET position = ? WHERE id = ?", (pb, a))
+                self._db.execute("UPDATE jobs SET position = ? WHERE id = ?", (pa, b))
+                self._db.commit()
 
     # ----- chats: rename / delete / move -----
 

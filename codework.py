@@ -20,7 +20,7 @@ NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "env", "dist", "build", ".next",
              ".idea", ".vscode", ".pytest_cache", ".mypy_cache", "target", "bin", "obj", ".gradle"}
-EXCLUDES = ["node_modules/", "__pycache__/", ".venv/", "venv/", "dist/", "build/", ".next/", "*.pyc",
+EXCLUDES = ["_packages/", "node_modules/", "__pycache__/", ".venv/", "venv/", "dist/", "build/", ".next/", "*.pyc",
             ".pytest_cache/", ".mypy_cache/", "target/", "obj/", "*.log", ".DS_Store", "Thumbs.db"]
 MAX_FILES_LISTED = 3000
 MAX_FILE_VIEW = 400_000          # bytes shown in the file viewer

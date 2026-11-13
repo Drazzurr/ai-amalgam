@@ -173,6 +173,47 @@ get a **Chat | Code** switch at the top.
   `%LOCALAPPDATA%\AIAmalgam\checkpoints`, so your project's own Git history is never touched.
   This needs Git, which Claude Code already installed for you.
 
+## Shortcuts
+Start a message with **/** to pick a shortcut: **/balance**, **/lore-check**, **/style-match**, **/write-like**,
+**/study-model**, **/read-game** or **/brainstorm**, followed by your request (e.g. `/balance Frost giant, CR 8`).
+The models get that shortcut's instructions along with your message. Make your own under **Info → Shortcuts**.
+They can be for both models or just one, and they sync to your phone.
+
+## Job queue
+**Job queue** (left sidebar) holds tasks for Amalgam to work through while you're away, one at a time, each in
+its own chat. Add jobs, optionally in a project, then press **Start**. Shortcuts work in jobs too. Jobs wait
+while you're in a discussion yourself. If a job has a question, it's saved for you and the queue moves on. A job
+that hits a plan limit is retried an hour later. The PC is kept awake while a job runs. With "Keep running
+after I close the window" on, you can close the window and leave it overnight.
+
+## Gallery
+**Gallery** (left sidebar) shows every picture in a project, or in all your chats: images the models made,
+pictures you attached or they showed you, and textures read from game files. It also shows what was asked for
+each one. Open the chat it came from, attach pictures to your next message, or select several and have them
+studied with **/style-match**.
+
+## Proposed doc edits
+When the models propose changes to a document, they show up as a card with a word-by-word before/after view
+for each edit. Each card also says whether the old text was found in the saved copy of the doc. Untick any
+edits you don't want and press **Approve selected**; Claude applies only those. With doc edits off, each edit
+has **Copy new text** instead.
+
+## Export
+The **⋯** menu above a chat exports it as a Markdown file, or asks Claude to put it in a new Google Doc. Inside
+a project, you can also export the project: its instructions, roles, decisions (project memory) and chat list,
+or everything including every chat. The same buttons are in the project's settings.
+
+## Packaging a Skyrim mod
+In a project whose code folder holds a Skyrim mod, open the **Code** tab and press **📦 Package mod**. Amalgam:
+- finds the files laid out like a Data folder (at the top of the code folder, or in a Data or mod subfolder);
+- leaves out work files (.blend, .psd, notes, scripts);
+- checks for common mistakes (LE vs SE plugins and meshes, uncompiled scripts, non-.dds textures, archives
+  whose names don't match a plugin, missing requirements);
+- builds a .zip in the `_packages` folder that Vortex and Mod Organizer 2 can install.
+
+Tick **FOMOD installer** to add an installer; folders in `Optional/<name>` become optional checkboxes in it.
+The check results also go into the chat, so the models can help fix any warnings.
+
 ## Managing chats
 - Hover a chat in the sidebar: ✎ renames it, 🗑 deletes it.
 - The project menu next to the chat title moves the open chat into (or out of) a project.

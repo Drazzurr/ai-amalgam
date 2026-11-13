@@ -28,6 +28,59 @@
   aside { background: var(--side); display: flex; flex-direction: column; padding: 14px 10px; min-height: 0; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; font-weight: 650; font-size: 16px; }
   .logo { width: 30px; height: 30px; flex: none; }
+  .sidebtns { display: flex; gap: 6px; margin: 2px 0 8px; }
+  .sidebtns button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 6px; border-radius: 9px; color: var(--quiet); font-size: 13px; background: var(--raised); }
+  .sidebtns button:hover { color: var(--ink); background: var(--raised2); }
+  .qcount { font-size: 11px; background: var(--you); color: #fff; border-radius: 9px; padding: 0 6px; display: none; } .qcount.show { display: inline; }
+  /* full-window panels (gallery, job queue) */
+  .panel { position: fixed; inset: 0; z-index: 60; background: rgba(10,11,13,.72); display: none; align-items: stretch; justify-content: center; padding: 28px; }
+  .panel.show { display: flex; }
+  .panel .pbox { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; width: min(1180px, 100%); display: flex; flex-direction: column; overflow: hidden; }
+  .panel .phead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .panel .phead h2 { margin: 0 8px 0 0; font-size: 17px; }
+  .panel .phead .sp { flex: 1; }
+  .panel .pbody { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .panel .pfoot { display: none; gap: 8px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; } .panel .pfoot.show { display: flex; }
+  .gfilter button { padding: 4px 10px; border-radius: 14px; font-size: 12.5px; color: var(--quiet); background: var(--raised); }
+  .gfilter button.on { color: var(--ink); background: var(--raised2); box-shadow: inset 0 0 0 1px var(--line); }
+  .ggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .gitem { position: relative; border-radius: 10px; overflow: hidden; background: var(--raised); aspect-ratio: 1; cursor: pointer; border: 2px solid transparent; }
+  .gitem img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gitem.sel { border-color: var(--you); }
+  .gitem .gtag { position: absolute; left: 6px; bottom: 6px; font-size: 10.5px; padding: 1px 6px; border-radius: 8px; background: rgba(0,0,0,.62); color: #ddd; }
+  .gitem .gsel { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.55); border: 2px solid #ddd; display: grid; place-items: center; font-size: 13px; color: #fff; }
+  .gitem.sel .gsel { background: var(--you); border-color: var(--you); }
+  .gview { display: none; position: fixed; inset: 0; z-index: 70; background: rgba(5,6,8,.9); padding: 24px; gap: 18px; }
+  .gview.show { display: flex; }
+  .gview .gimg { flex: 1; display: grid; place-items: center; min-width: 0; } .gview .gimg img { max-width: 100%; max-height: calc(100vh - 48px); object-fit: contain; border-radius: 8px; }
+  .gview .ginfo { width: 320px; overflow-y: auto; color: var(--ink); font-size: 14px; }
+  .gview .ginfo .k { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; margin: 12px 0 3px; }
+  .gview .ginfo .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .gempty { color: var(--quiet); text-align: center; padding: 60px 20px; }
+  /* job queue */
+  .qadd { display: grid; gap: 8px; margin-bottom: 14px; }
+  .qadd textarea { min-height: 70px; resize: vertical; }
+  .qadd .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .qjob { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+  .qjob .qs { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 10px; background: var(--raised2); color: var(--quiet); min-width: 64px; text-align: center; }
+  .qjob .qs.running { color: var(--gpt); } .qjob .qs.done { color: var(--you); } .qjob .qs.needs { color: var(--ask); }
+  .qjob .qs.failed { color: #f08a84; }
+  .qjob .qt { flex: 1; min-width: 0; } .qjob .qt .txt { white-space: pre-wrap; word-break: break-word; max-height: 4.6em; overflow: hidden; }
+  .qjob .qt small { display: block; color: var(--faint); margin-top: 3px; } .qjob .qt .note { color: var(--quiet); }
+  .qjob .qa { flex: none; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-width: 46%; }
+  .qjob .qa button { font-size: 12px; padding: 3px 8px; }
+  .qstat { color: var(--quiet); font-size: 13px; }
+  /* mod packaging */
+  .modform { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; margin-bottom: 12px; }
+  .modform label { display: grid; gap: 3px; font-size: 12.5px; color: var(--quiet); }
+  .modform label.chk { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 13.5px; }
+  .modrep { font-size: 13.5px; line-height: 1.5; } .modrep .sec { margin: 10px 0 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
+  .modrep li { margin: 3px 0; } .modrep .e { color: #f08a84; } .modrep .w { color: var(--ask); } .modrep .ok { color: var(--gpt); }
+  @media (max-width: 760px) {
+    .panel { padding: 0; } .panel .pbox { border-radius: 0; border: 0; }
+    .ggrid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+    .gview { flex-direction: column; padding: 12px; } .gview .ginfo { width: auto; max-height: 40vh; } .gview .gimg img { max-height: 52vh; }
+  }
   .newchat { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 10px;
              background: var(--raised); border: 1px solid var(--line); font-weight: 550; }
   .newchat:hover { background: var(--raised2); }
@@ -248,6 +301,21 @@
   .termout .cmd, .cmdreq .cmd { color: #8fe0b5; }
   .termout .st { color: var(--faint); }
   .cmdreq { border-color: rgba(108,140,255,.5); }
+  /* proposed document edits */
+  .edits { border: 1px solid rgba(108,140,255,.45); border-radius: 12px; padding: 10px 12px; background: rgba(108,140,255,.05); }
+  .edits .tag { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--you); margin-bottom: 6px; }
+  .edit { border-top: 1px solid var(--line); padding: 8px 0; } .edit:first-of-type { border-top: 0; }
+  .ehead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; color: var(--quiet); }
+  .ehead label { display: flex; gap: 6px; align-items: center; color: var(--ink); cursor: pointer; }
+  .ebadge { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; background: var(--raised2); }
+  .ebadge.ok { color: var(--gpt); } .ebadge.bad { color: #f08a84; }
+  .ediff { margin-top: 6px; white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.55; background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+  .ediff del { background: rgba(240,138,132,.18); color: #f3a39e; text-decoration: line-through; }
+  .ediff ins { background: rgba(31,191,133,.16); color: #7fe0b8; text-decoration: none; }
+  .ediff .gap { color: var(--faint); }
+  .eacts { margin-top: 5px; } .eacts button { font-size: 12px; color: var(--quiet); } .eacts button:hover { color: var(--ink); }
+  .erow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .edits.answered .erow, .edits.answered input[type=checkbox] { display: none; }
   .cmdreq .tag { font: 650 12px "Segoe UI", system-ui, sans-serif; color: var(--you); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
   .approvebar { display: none; max-width: 856px; margin: 0 auto 8px; border: 1px solid rgba(108,140,255,.55); background: rgba(108,140,255,.09); border-radius: 12px; padding: 10px 12px; }
   .approvebar.show { display: block; }
@@ -280,7 +348,25 @@
   .err2 { color: #ef8b8b; font-size: 12.5px; margin: 6px 0 0; }
 
   /* ---------- composer ---------- */
-  .composer { flex: none; padding: 8px 32px 22px; }
+  .composer { flex: none; padding: 8px 32px 22px; position: relative; }
+  /* slash shortcuts */
+  .scmenu { display: none; position: absolute; left: 32px; right: 32px; bottom: calc(100% - 6px); max-height: 300px; overflow-y: auto;
+    background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 5px; z-index: 30; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+  .scmenu.show { display: block; }
+  .scmenu button { display: flex; width: 100%; gap: 10px; align-items: baseline; text-align: left; padding: 7px 10px; border-radius: 8px; color: var(--ink); }
+  .scmenu button.on, .scmenu button:hover { background: var(--raised2); }
+  .scmenu b { font-family: Consolas, monospace; font-size: 13px; white-space: nowrap; }
+  .scmenu small { color: var(--quiet); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scchip { display: inline-block; font-family: Consolas, monospace; font-size: 12.5px; padding: 1px 7px; margin-right: 6px; border-radius: 6px;
+    background: rgba(108,140,255,.16); color: var(--you); cursor: help; }
+  .scrow { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .scrow:last-child { border-bottom: 0; }
+  .scrow b { font-family: Consolas, monospace; font-size: 12.5px; white-space: nowrap; }
+  .scrow small { flex: 1; color: var(--quiet); }
+  .scrow .lnk { color: var(--quiet); cursor: pointer; font-size: 12px; }
+  .scrow .lnk:hover { color: var(--ink); }
+  .scform { display: none; margin-top: 8px; } .scform.show { display: grid; gap: 6px; }
+  .scform textarea { min-height: 90px; resize: vertical; }
   .chips2 { max-width: 856px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px; }
   .chips2:not(:empty) { margin-bottom: 8px; }
   .fchip { display: inline-flex; align-items: center; gap: 6px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px;
@@ -504,6 +590,10 @@
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     New chat</button>
   <div class="search"><input id="search" class="field" placeholder="Search chats  (Ctrl+K)" spellcheck="false"></div>
+  <div class="sidebtns"><button id="galleryBtn" title="Every picture in your chats and projects">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>Gallery</button>
+    <button id="queueBtn" title="Jobs Amalgam works through while you're away">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>Job queue<span class="qcount" id="queueCount"></span></button></div>
   <div class="chatlist">
     <div id="results" style="display:none"></div>
     <div id="lists">
@@ -530,12 +620,14 @@
     <select id="moveSel" class="movesel" title="Move this chat to a project" style="display:none"></select>
     <div class="faces" id="faces"></div>
     <div class="menuwrap"><button class="iconbtn" id="menuBtn" title="More" style="width:30px;height:30px;font-size:18px">⋯</button>
-      <div class="menu" id="menu"><button id="exportMd">Export chat as Markdown file</button><button id="copyChat">Copy whole chat</button><button id="shareChat" style="display:none">Share chat…</button></div></div>
+      <div class="menu" id="menu"><button id="exportMd">Export chat as Markdown file</button><button id="copyChat">Copy whole chat</button><button id="shareChat" style="display:none">Share chat…</button>
+        <button id="chatToDoc">Put this chat in a Google Doc…</button>
+        <button id="exportProj" class="projonly">Export project (decisions + chat list)</button><button id="exportProjAll" class="projonly">Export whole project (every chat)</button></div></div>
   </header>
   <div id="log"></div>
   <div id="codeView">
     <div class="ctabs"><button class="on" data-ct="files">Files</button><button data-ct="changes">Changes</button><button data-ct="term">Terminal</button>
-      <span class="sp"></span><span class="path" id="codePath"></span></div>
+      <span class="sp"></span><button class="btn" id="modBtn" title="Check this folder and package it as an installable Skyrim mod">📦 Package mod</button><span class="path" id="codePath"></span></div>
     <div class="cpane on" id="ct-files">
       <div class="filelist"><input class="field" id="fileFilter" placeholder="Filter files…" spellcheck="false"><div class="items" id="fileItems"></div></div>
       <div class="viewer"><div class="vbar"><button class="btn backfiles" id="backFiles" style="display:none">‹ Files</button><span class="sp" id="vName">Pick a file</span>
@@ -551,6 +643,7 @@
       <div class="row"><button class="btn go" id="apOk">Approve and run</button><button class="btn" id="apAlways" title="Run it now, and from now on run these exact commands in this project without asking">Always allow</button><button class="btn no" id="apNo">Deny</button>
         <small>Or type a reply to skip them.</small></div></div>
 
+    <div class="scmenu" id="scMenu" role="listbox"></div>
     <div class="chips2" id="fileChips"></div>
     <div class="box">
       <button class="round clip" id="clipBtn" title="Attach files (or drag them onto the chat)">
@@ -566,6 +659,49 @@
   </div>
 </main>
 
+<div class="panel" id="galleryPanel"><div class="pbox">
+  <div class="phead"><h2>Gallery</h2>
+    <select class="field" id="gScope" style="width:auto"></select>
+    <div class="gfilter" id="gFilter"><button class="on" data-gk="">All</button><button data-gk="generated">Made</button><button data-gk="shown">Shown</button><button data-gk="attached">Attached</button><button data-gk="extracted">From game files</button></div>
+    <span class="sp"></span><button class="btn" id="gSelect">Select</button><button class="btn" id="gClose">Close</button></div>
+  <div class="pbody"><div class="ggrid" id="gGrid"></div></div>
+  <div class="pfoot" id="gFoot"><b id="gCount">0 selected</b><span class="sp"></span>
+    <button class="btn" id="gAttach">Attach to my next message</button><button class="btn go" id="gStyle">Study their style (/style-match)</button></div>
+</div></div>
+<div class="panel" id="queuePanel"><div class="pbox">
+  <div class="phead"><h2>Job queue</h2><span class="qstat" id="qStatus"></span><span class="sp"></span>
+    <label class="qstat" title="How many back-and-forth rounds each job may take">Rounds per job <select class="field" id="qRounds" style="width:auto;display:inline-block">
+      <option>4</option><option>6</option><option>8</option><option>12</option><option>20</option></select></label>
+    <button class="btn go" id="qRun">Start</button><button class="btn" id="qClose">Close</button></div>
+  <div class="pbody">
+    <div class="qadd">
+      <textarea class="field" id="qText" placeholder="What should they do? e.g. /balance these five new magic items (paste them), or: proofread chapter 3 of the World Bible and list every contradiction"></textarea>
+      <div class="row"><select class="field" id="qProj" style="width:auto"></select>
+        <label class="qstat"><input type="checkbox" id="qLines"> One job per line</label><span class="sp" style="flex:1"></span>
+        <button class="btn go" id="qAdd">Add to queue</button></div>
+      <small class="plain">Jobs run one at a time, each in its own chat, and wait while you're in a discussion yourself. Questions are saved for you and the queue moves on. Your PC stays awake while a job runs. Shortcuts like /balance work here too.</small>
+    </div>
+    <div id="qList"></div>
+  </div>
+  <div class="pfoot show"><span class="qstat" id="qFoot"></span><span class="sp"></span><button class="btn" id="qClear">Clear finished</button></div>
+</div></div>
+<div class="panel" id="modPanel"><div class="pbox">
+  <div class="phead"><h2>Package mod</h2><span class="qstat">Skyrim · for Vortex and Mod Organizer 2</span><span class="sp"></span><button class="btn" id="modClose">Close</button></div>
+  <div class="pbody">
+    <div class="modform">
+      <label>Mod name<input class="field" id="modName" placeholder="from the plugin's name"></label>
+      <label>Version<input class="field" id="modVer" value="1.0.0"></label>
+      <label>Author<input class="field" id="modAuthor" placeholder="from the plugin"></label>
+      <label>Game<select class="field" id="modGame"><option value="se">Skyrim Special / Anniversary Edition</option><option value="le">Skyrim Legendary Edition</option></select></label>
+      <label style="grid-column:1/-1">Description (for the installer)<input class="field" id="modDesc" placeholder="from the plugin"></label>
+      <label class="chk"><input type="checkbox" id="modSrc" checked> Include script sources (.psc)</label>
+      <label class="chk"><input type="checkbox" id="modFomod"> Make a FOMOD installer (needed for Optional/ parts)</label>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn" id="modCheck">Check</button><button class="btn go" id="modBuild">Build package</button></div>
+    <div class="modrep" id="modRep"><p class="plain">Amalgam finds the mod's files where they'd sit in Skyrim's Data folder (in this code folder, or its Data or mod subfolder), leaves out work files like .blend and .psd, checks for common mistakes, and builds a .zip in the _packages folder.</p></div>
+  </div>
+</div></div>
+<div class="gview" id="gView"><div class="gimg"><img id="gvImg" alt=""></div><div class="ginfo" id="gvInfo"></div></div>
 <div class="scrim" id="scrim"></div>
 <nav class="tabbar mob" id="tabbar" style="display:none">
   <button class="on" data-tab="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Chat<span class="badge" id="chatBadge"></span></button>
@@ -627,6 +763,8 @@
     <p class="err2" id="codeErr" style="display:none"></p>
     <div id="allowedBox" style="display:none"><div class="sublabel">Always-allowed commands <span class="hint">run without asking</span></div><div id="allowedList"></div></div>
     <p class="help">Saved automatically. Every chat in this project gets these.</p>
+    <div class="sublabel" style="margin-top:10px">Export</div>
+    <div class="codefield"><button class="btn" id="projExport" style="flex:1" title="Instructions, roles, memory (decisions) and the list of chats">Decisions + chat list</button><button class="btn" id="projExportAll" title="Everything, including every chat">Everything</button><button class="btn" id="projToDoc" title="Claude puts the decisions and chat list in a new Google Doc">To Google Doc</button></div>
   </div>
   <div class="card" id="editsCard" data-card="edits" style="display:none">
     <h3>Doc edits</h3>
@@ -658,6 +796,19 @@
     <h3>Skills</h3>
     <p class="help" style="margin:0 0 6px">Playbooks the models follow. Switch off <span id="skillsWhere">everywhere</span>:</p>
     <div id="skillList"></div>
+  </div>
+  <div class="card" data-card="shortcuts">
+    <h3>Shortcuts</h3>
+    <p class="help" style="margin:0 0 6px">Start a message with <b>/</b> to use one, e.g. <b>/balance</b> Frost giant (CR 8).</p>
+    <div id="scList"></div>
+    <button class="btn" id="scAdd" style="margin-top:8px">+ New shortcut</button>
+    <div class="scform" id="scForm">
+      <input class="field" id="scName" placeholder="name, e.g. npc" spellcheck="false" maxlength="24">
+      <input class="field" id="scDesc" placeholder="What it's for (shown in the menu)" maxlength="120">
+      <textarea class="field" id="scInstr" placeholder="Instructions for the models. Whatever you type after the shortcut is the request they apply these to."></textarea>
+      <select class="field" id="scOnly"><option value="">Both models</option><option value="claude">Only Claude</option><option value="gpt">Only GPT</option></select>
+      <div><button class="btn go" id="scSave">Save</button> <button class="btn" id="scCancel">Cancel</button> <small class="plain" id="scErr" style="color:#f08a84"></small></div>
+    </div>
   </div>
   <div class="card" data-card="discussion">
     <h3>Discussion</h3>
@@ -876,6 +1027,9 @@ function addMessage(m, animate, bulk, beforeNode) {
     }
     if (m.kind === "user") markPicked(m.text);
     let inner = m.kind === "question" ? askHtml : `<div class="body">${render(m.text)}</div>`;
+    const scm = m.kind === "user" && m.text.match(/^\s*\/([a-z0-9][a-z0-9-]*)(?=\s|$)/i);
+    const scDef = scm && shortcutList.find(x => x.name === scm[1].toLowerCase());
+    if (scDef) inner = `<div class="body"><span class="scchip" title="${esc(scDef.description + "\n\n" + scDef.instructions)}">/${esc(scDef.name)}</span>${render(m.text.replace(/^\s*\/[a-z0-9-]+\s*/i, "") || " ")}</div>`;
     if (m.kind === "user" && /\n📎 /.test("\n" + m.text)) {
       const lines = m.text.split("\n"), files = [];
       while (lines.length && /^📎 /.test(lines[lines.length - 1])) files.unshift(lines.pop().slice(2).trim());
@@ -888,6 +1042,8 @@ function addMessage(m, animate, bulk, beforeNode) {
       const src = `/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(m.text)}`;
       inner = `<div class="genimg"><a href="#" data-imgopen="${esc(m.text)}"><img src="${src}" alt="Image by ${esc(m.speaker)}" loading="lazy"></a>
         <div class="imgcap">${esc(m.text.split(/[\\/]/).pop())} · <a href="#" data-imgfolder="${esc(m.text)}">Show in folder</a></div></div>`;
+    } else if (m.kind === "edits") {
+      inner = editsHtml(m);
     } else if (m.kind === "output") {
       inner = termHtml(m.text);
       beforeNode ? termItems.unshift(m) : termItems.push(m);
@@ -1284,11 +1440,13 @@ async function poll() {
     if (!lite) { lastFull = Date.now(); fullState = got; }
     if (APP && !appHelloDone) { appHelloDone = true; appHello(); }
     const s = lite ? {...fullState, ...got} : got;
+    if (s.shortcuts) shortcutList = s.shortcuts;     // before messages are drawn (their /shortcut chips)
     if (!lite && s.phone !== undefined && s.phone !== PHONE) { PHONE = s.phone; store("amalgam_phone", PHONE ? "1" : "0"); }
     if (PHONE && $("search").placeholder.includes("Ctrl")) $("search").placeholder = "Search chats";
     if (lastSyncRev !== null && s.sync_rev !== lastSyncRev) chatId = undefined;   // changes arrived from the other device
     lastSyncRev = s.sync_rev;
     announceBackground(s);
+    renderQueueBadge(s.queue);
     $("reconnect").classList.remove("show");
     reconnectAsked = false;
     if (APP && APP.pageOk) APP.pageOk();        // tells the app the page reaches AI Amalgam fine
@@ -1345,9 +1503,12 @@ async function poll() {
     renderHint(s);
     notifyCheck(s);
     markLatest();
+    wireEdits();
     currentProject = s.project_id;
+    document.querySelectorAll("#menu .projonly").forEach(b => b.style.display = s.project_id ? "" : "none");
     if (!lite) {
       renderSkills(s.skills, s.skills_off || [], !!s.project_id);
+      renderShortcuts(s.shortcuts);
       renderApps(s.apps);
       notifyOn = s.notify !== false;
       if (document.activeElement !== $("notifyOn")) $("notifyOn").checked = notifyOn;
@@ -1416,6 +1577,263 @@ function showClosed() {
 
 // ---------- message tools: copy, edit, regenerate, links ----------
 let msgsById = {};
+// ---------- gallery ----------
+let gItems = [], gKind = "", gSel = new Set(), gSelecting = false, gScope = null;
+const imgUrl = (p, thumb) => `/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(p)}${thumb ? "&thumb=1" : ""}`;
+const gKindWord = {generated: "Made", shown: "Shown", attached: "Attached", extracted: "Game file"};
+async function openGallery() {
+  const projects = fullState.projects || [];
+  const opts = [["all", "All chats"], ...projects.map(p => [String(p.id), p.name]), ["none", "Chats without a project"]];
+  gScope = gScope || (currentProject ? String(currentProject) : "all");
+  $("gScope").innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}" ${v === gScope ? "selected" : ""}>${esc(t)}</option>`).join("");
+  $("galleryPanel").classList.add("show"); closeDrawer();
+  await loadGallery();
+}
+async function loadGallery() {
+  $("gGrid").innerHTML = `<div class="gempty">Loading…</div>`;
+  const r = await api(`/api/gallery?scope=${encodeURIComponent(gScope)}`);
+  gItems = r.items || []; gSel = new Set([...gSel].filter(p => gItems.some(x => x.path === p)));
+  drawGallery();
+}
+function drawGallery() {
+  const list = gItems.filter(x => !gKind || x.kind === gKind);
+  $("gGrid").innerHTML = list.length ? list.map((x, i) => `<div class="gitem ${gSel.has(x.path) ? "sel" : ""}" data-gi="${gItems.indexOf(x)}" title="${esc(x.caption || x.name)}">
+      <img src="${imgUrl(x.path, true)}" alt="${esc(x.caption || x.name)}" loading="lazy"><span class="gtag">${gKindWord[x.kind] || ""}</span>${gSelecting ? `<span class="gsel">${gSel.has(x.path) ? "✓" : ""}</span>` : ""}</div>`).join("")
+    : `<div class="gempty">No pictures here yet. Images the models make, pictures you attach and textures read from game files show up here.</div>`;
+  $("gGrid").querySelectorAll("[data-gi]").forEach(el => el.onclick = () => {
+    const x = gItems[+el.dataset.gi];
+    if (gSelecting) { gSel.has(x.path) ? gSel.delete(x.path) : gSel.add(x.path); drawGallery(); } else viewImage(x);
+  });
+  $("gFoot").classList.toggle("show", gSelecting);
+  $("gCount").textContent = `${gSel.size} selected`;
+  $("gSelect").textContent = gSelecting ? "Done selecting" : "Select";
+}
+function viewImage(x) {
+  $("gvImg").src = imgUrl(x.path, false);
+  $("gvInfo").innerHTML = `<b>${esc(x.name)}</b>
+    <div class="k">${gKindWord[x.kind] || ""}${x.by ? " · by " + esc(x.by) : ""}</div><div>${new Date(x.created * 1000).toLocaleString()}</div>
+    <div class="k">Chat</div><div>${esc(x.chat_title)}</div>
+    ${x.caption && x.caption !== x.name ? `<div class="k">Caption</div><div>${esc(x.caption)}</div>` : ""}
+    ${x.prompt ? `<div class="k">What was asked</div><div>${render(x.prompt)}</div>` : ""}
+    <div class="btns"><button class="btn" data-gv="chat">Open chat</button><button class="btn" data-gv="attach">Attach to my next message</button>
+      ${PHONE ? "" : `<button class="btn" data-gv="folder">Show in folder</button>`}<button class="btn" data-gv="close">Close</button></div>`;
+  $("gView").classList.add("show");
+  $("gvInfo").querySelectorAll("[data-gv]").forEach(b => b.onclick = async () => {
+    const a = b.dataset.gv;
+    if (a === "close") return $("gView").classList.remove("show");
+    if (a === "folder") return api("/api/reveal", {path: x.path, folder: true});
+    if (a === "chat") { $("gView").classList.remove("show"); $("galleryPanel").classList.remove("show"); return api("/api/open", {chat_id: x.chat_id}); }
+    if (a === "attach") { await galleryAttach([x.path]); $("gView").classList.remove("show"); }
+  });
+}
+async function galleryAttach(paths, text) {
+  const r = await api("/api/gallery/attach", {paths});
+  if (r.error || !r.added) return toast(r.error || "Couldn't attach those pictures.");
+  $("galleryPanel").classList.remove("show"); setTab("chat");
+  if (text && !$("input").value.trim()) { $("input").value = text; grow(); }
+  $("sendBtn").disabled = false; $("input").focus();
+  toast(`${r.added} picture${r.added > 1 ? "s" : ""} attached to your next message.`);
+}
+$("galleryBtn").onclick = openGallery;
+$("gClose").onclick = () => $("galleryPanel").classList.remove("show");
+$("gScope").onchange = () => { gScope = $("gScope").value; loadGallery(); };
+$("gFilter").querySelectorAll("[data-gk]").forEach(b => b.onclick = () => {
+  gKind = b.dataset.gk; $("gFilter").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); drawGallery();
+});
+$("gSelect").onclick = () => { gSelecting = !gSelecting; if (!gSelecting) gSel.clear(); drawGallery(); };
+$("gAttach").onclick = () => gSel.size ? galleryAttach([...gSel]) : toast("Pick some pictures first.");
+$("gStyle").onclick = () => gSel.size ? galleryAttach([...gSel], "/style-match these pictures") : toast("Pick some pictures first.");
+$("gView").onclick = e => { if (e.target === $("gView") || e.target.closest(".gimg")) $("gView").classList.remove("show"); };
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if ($("gView").classList.contains("show")) { $("gView").classList.remove("show"); e.stopPropagation(); }
+  else if ($("galleryPanel").classList.contains("show")) { $("galleryPanel").classList.remove("show"); e.stopPropagation(); }
+}, true);
+
+// ---------- job queue ----------
+let qTimer = null, qData = null;
+const qWord = {queued: "Queued", running: "Working…", done: "Done", "needs you": "Needs you", failed: "Failed", stopped: "Stopped"};
+async function openQueue() {
+  const projects = fullState.projects || [];
+  const keep = $("qProj").value || (currentProject ? String(currentProject) : "");
+  $("qProj").innerHTML = `<option value="">No project</option>` + projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  $("qProj").value = keep;
+  $("queuePanel").classList.add("show"); closeDrawer();
+  await loadQueue();
+  clearInterval(qTimer); qTimer = setInterval(() => { if ($("queuePanel").classList.contains("show")) loadQueue(); else clearInterval(qTimer); }, 3000);
+}
+async function loadQueue(data) { qData = data || await api("/api/jobs"); drawQueue(); }
+function drawQueue() {
+  const d = qData; if (!d) return;
+  const names = Object.fromEntries((fullState.projects || []).map(p => [p.id, p.name]));
+  const chatIds = new Set((fullState.chats || []).map(c => c.id));
+  const open = d.jobs.filter(j => j.status === "queued" || j.status === "running").length;
+  const paused = d.paused_until && d.paused_until * 1000 > Date.now();
+  $("qStatus").textContent = !d.running ? (open ? "Paused · press Start to run" : "Stopped")
+    : paused ? `Waiting for a plan limit to reset (${new Date(d.paused_until * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})})`
+    : d.jobs.some(j => j.status === "running") ? "Working" : d.waiting_for_you ? "Waiting until your discussion finishes" : open ? "Starting the next job…" : "Running · add jobs any time";
+  $("qRun").textContent = d.running ? "Pause" : "Start"; $("qRun").classList.toggle("go", !d.running);
+  if (document.activeElement !== $("qRounds")) $("qRounds").value = String(d.rounds);
+  const fmt = t => t ? new Date(t * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}) : "";
+  $("qList").innerHTML = d.jobs.length ? d.jobs.map(j => {
+    const cls = j.status === "needs you" ? "needs" : j.status;
+    const acts = [];
+    if (j.chat_id && chatIds.has(j.chat_id)) acts.push(`<button class="btn" data-q="open" data-id="${j.id}" data-chat="${j.chat_id}">Open chat</button>`);
+    if (j.status === "queued") acts.push(`<button class="btn" data-q="up" data-id="${j.id}" title="Move up">↑</button><button class="btn" data-q="down" data-id="${j.id}" title="Move down">↓</button>`);
+    if (j.status === "running") acts.push(`<button class="btn" data-q="stop" data-id="${j.id}">Stop</button>`);
+    if (["failed", "stopped", "needs you", "done"].includes(j.status)) acts.push(`<button class="btn" data-q="retry" data-id="${j.id}" title="Run it again (continues its chat)">Run again</button>`);
+    if (j.status !== "running") acts.push(`<button class="btn" data-q="remove" data-id="${j.id}">Remove</button>`);
+    const when = j.status === "queued" ? `Added ${fmt(j.created)}` : j.finished ? `Finished ${fmt(j.finished)}` : j.started ? `Started ${fmt(j.started)}` : "";
+    return `<div class="qjob"><span class="qs ${cls}">${qWord[j.status] || esc(j.status)}</span>
+      <div class="qt"><div class="txt">${esc(j.text)}</div><small>${j.project_id && names[j.project_id] ? esc(names[j.project_id]) + " · " : ""}${when}</small>
+        ${j.note ? `<small class="note">${esc(j.note)}</small>` : ""}</div><div class="qa">${acts.join("")}</div></div>`;
+  }).join("") : `<div class="gempty">No jobs yet. Add one above, then press Start.</div>`;
+  const done = d.jobs.filter(j => j.status === "done").length, need = d.jobs.filter(j => j.status === "needs you").length;
+  $("qFoot").textContent = `${open} to do · ${done} done` + (need ? ` · ${need} need${need === 1 ? "s" : ""} you` : "");
+  $("qList").querySelectorAll("[data-q]").forEach(b => b.onclick = async () => {
+    const a = b.dataset.q, id = +b.dataset.id;
+    if (a === "open") { $("queuePanel").classList.remove("show"); return api("/api/open", {chat_id: +b.dataset.chat}); }
+    if (a === "remove" && !confirm("Remove this job from the queue? (Its chat stays.)")) return;
+    const path = {up: "move", down: "move"}[a] || a;
+    loadQueue(await api("/api/jobs/" + path, {id, dir: a === "up" ? -1 : 1}));
+  });
+}
+function renderQueueBadge(q) {
+  if (!q) return;
+  const n = q.open + q.needs_you;
+  $("queueCount").textContent = q.needs_you ? `${q.needs_you}!` : n || "";
+  $("queueCount").classList.toggle("show", !!n);
+  $("queueCount").title = `${q.open} to do` + (q.needs_you ? `, ${q.needs_you} need you` : "");
+}
+$("queueBtn").onclick = openQueue;
+$("qClose").onclick = () => $("queuePanel").classList.remove("show");
+$("qRun").onclick = async () => loadQueue(await api("/api/jobs/run", {on: !(qData && qData.running)}));
+$("qRounds").onchange = async () => loadQueue(await api("/api/jobs/settings", {rounds: +$("qRounds").value}));
+$("qClear").onclick = async () => loadQueue(await api("/api/jobs/clear", {}));
+$("qAdd").onclick = async () => {
+  const text = $("qText").value.trim();
+  if (!text) return toast("Write what the job should do.");
+  const texts = $("qLines").checked ? text.split("\n").map(t => t.trim()).filter(Boolean) : [text];
+  const r = await api("/api/jobs/add", {texts, project_id: $("qProj").value || null});
+  if (r.error) return toast(r.error);
+  $("qText").value = ""; loadQueue(r);
+  toast(texts.length > 1 ? `Added ${texts.length} jobs.` : "Added to the queue." + (r.running ? "" : " Press Start when you're ready."));
+};
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("queuePanel").classList.contains("show")) { $("queuePanel").classList.remove("show"); e.stopPropagation(); }
+}, true);
+
+// ---------- mod packaging ----------
+function modOpts() {
+  return {name: $("modName").value.trim(), version: $("modVer").value.trim(), author: $("modAuthor").value.trim(),
+          description: $("modDesc").value.trim(), game: $("modGame").value, include_source: $("modSrc").checked, fomod: $("modFomod").checked};
+}
+function modReport(r, built) {
+  const li = (cls, list) => list.map(x => `<li class="${cls}">${esc(x)}</li>`).join("");
+  const mb = b => (b / 1e6).toFixed(b > 1e7 ? 0 : 1) + " MB";
+  let h = "";
+  if (r.error) h = `<p class="e">${esc(r.error)}</p>`;
+  else {
+    if (built && r.path) h += `<p class="ok"><b>Built ${esc(r.path.split(/[\\/]/).pop())}</b> (${mb(r.package_bytes)}). ${PHONE ? "" : `<button class="btn" id="modReveal">Show in folder</button>`}</p>`;
+    h += `<p>${r.files} files (${mb(r.bytes || 0)}) from <code>${esc(r.root || "")}</code>${r.plugins && r.plugins.length ? " · plugins: " + r.plugins.map(p => esc(p.name) + (p.esl ? " (ESL)" : p.esm ? " (ESM)" : "")).join(", ") : ""}</p>`;
+    if (r.errors.length) h += `<div class="sec">Problems (fix these to package)</div><ul>${li("e", r.errors)}</ul>`;
+    if (r.warnings.length) h += `<div class="sec">Warnings</div><ul>${li("w", r.warnings)}</ul>`;
+    if (r.notes.length) h += `<div class="sec">Notes</div><ul>${li("", r.notes)}</ul>`;
+    if (!r.errors.length && !r.warnings.length && !built) h += `<p class="ok">No problems found.</p>`;
+    if (r.optional && r.optional.length) h += `<div class="sec">Optional parts</div><p>${r.optional.map(esc).join(", ")}</p>`;
+    if (r.left_out && r.left_out.length) h += `<div class="sec">Left out (work files)</div><p class="plain">${r.left_out.slice(0, 30).map(esc).join(", ")}${r.left_out.length > 30 ? "…" : ""}</p>`;
+  }
+  $("modRep").innerHTML = h;
+  if ($("modReveal")) $("modReveal").onclick = () => api("/api/reveal", {path: r.path, folder: true});
+}
+async function modCheck() {
+  $("modRep").innerHTML = `<p class="plain">Checking…</p>`;
+  const r = await api("/api/mod/check", modOpts());
+  if (!r.error && r.plugins && r.plugins[0]) {
+    if (!$("modName").value) $("modName").placeholder = r.plugins[0].name.replace(/\.es[plm]$/i, "");
+    if (!$("modAuthor").value && r.plugins[0].author) $("modAuthor").placeholder = r.plugins[0].author;
+    if (!$("modDesc").value && r.plugins[0].description) $("modDesc").placeholder = r.plugins[0].description;
+  }
+  if (r.optional && r.optional.length && !$("modFomod").dataset.touched && !$("modFomod").checked) {
+    $("modFomod").checked = true; return modCheck();      // optional parts need the installer: check again with it on
+  }
+  modReport(r, false);
+}
+$("modBtn").onclick = () => { $("modPanel").classList.add("show"); modCheck(); };
+$("modClose").onclick = () => $("modPanel").classList.remove("show");
+$("modCheck").onclick = modCheck;
+$("modFomod").onchange = () => { $("modFomod").dataset.touched = "1"; };
+$("modBuild").onclick = async () => {
+  $("modBuild").disabled = true; $("modRep").innerHTML = `<p class="plain">Packaging…</p>`;
+  const start = await api("/api/mod/build", modOpts());
+  if (start.error) { $("modBuild").disabled = false; return modReport(start, false); }
+  for (;;) {
+    await new Promise(r => setTimeout(r, 700));
+    const st = await api("/api/mod/status");
+    if (st.state === "running") continue;
+    $("modBuild").disabled = false;
+    if (st.error) return modReport({error: st.error}, false);
+    modReport(st.report, st.state === "done");
+    if (st.state === "done") toast("Mod packaged.");
+    return;
+  }
+};
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("modPanel").classList.contains("show")) { $("modPanel").classList.remove("show"); e.stopPropagation(); }
+}, true);
+
+// ---------- proposed document edits ----------
+function editsHtml(m) {
+  let d; try { d = JSON.parse(m.text); } catch (e) { return `<div class="body">${render(m.text)}</div>`; }
+  const canApply = !!(fullState.chat_settings && fullState.chat_settings.allow_edits);
+  const piece = (op, t, only) => {
+    if (op === "eq" && !only && t.length > 260) t = t.slice(0, 110) + "\u2009…\u2009" + t.slice(-110);
+    return op === "del" ? `<del>${esc(t)}</del>` : op === "ins" ? `<ins>${esc(t)}</ins>` : esc(t);
+  };
+  const cards = (d.edits || []).map(e => {
+    const badge = e.found === true ? `<span class="ebadge ok" title="This text is in the saved copy of the document">✓ found in the doc</span>`
+      : e.found === false ? `<span class="ebadge bad" title="Not in the saved copy: the document may have changed, or the text isn't copied exactly">⚠ text not found in the saved copy</span>` : "";
+    const diff = (e.diff || []).map(([op, t]) => piece(op, t, e.diff.length === 1)).join("") || `<span class="gap">(no change)</span>`;
+    return `<div class="edit"><div class="ehead"><label><input type="checkbox" data-en="${e.n}" checked><b>Edit ${e.n}</b></label>
+      ${e.where ? `<span>${esc(e.where)}</span>` : ""}${badge}</div>
+      <div class="ediff">${diff}</div>
+      <div class="eacts"><button data-ecopy="${e.n}">Copy new text</button>${e.find ? ` · <button data-ecopyold="${e.n}">Copy old text</button>` : ""}</div></div>`;
+  }).join("");
+  const row = canApply ? `<div class="erow"><button class="btn go" data-eok="1">Approve selected</button><button class="btn" data-eno="1">Don't apply any</button>
+    <small class="plain">${esc(d.by || m.speaker)} applies only what you approve.</small></div>`
+    : `<div class="erow"><small class="plain">Doc editing is off for this chat, so nothing changes in the document. Copy the new text, or switch on Allow doc edits and ask them to apply it.</small></div>`;
+  return `<div class="edits" data-edits="${m.id}"><div class="tag">Proposed doc edits · ${(d.edits || []).length}</div>${cards}${row}</div>`;
+}
+function wireEdits() {
+  const cards = [...document.querySelectorAll("#log .edits")];
+  cards.forEach(card => {
+    const msgEl = card.closest(".msg");
+    // answered once you've written something after it
+    let n = msgEl && msgEl.nextElementSibling, answered = false;
+    while (n) { if (n.dataset && n.dataset.user) { answered = true; break; } n = n.nextElementSibling; }
+    card.classList.toggle("answered", answered);
+    if (card.dataset.wired) return;
+    card.dataset.wired = "1";
+    const m = msgsById[+card.dataset.edits]; let d = {edits: []}; try { d = JSON.parse(m.text); } catch (e) {}
+    const byN = Object.fromEntries((d.edits || []).map(e => [e.n, e]));
+    card.querySelectorAll("[data-ecopy]").forEach(b => b.onclick = () => copyText(byN[b.dataset.ecopy].replace, b));
+    card.querySelectorAll("[data-ecopyold]").forEach(b => b.onclick = () => copyText(byN[b.dataset.ecopyold].find, b));
+    const answer = async text => {
+      card.querySelectorAll(".erow button").forEach(b => b.disabled = true);
+      const r = await api("/api/send", {text});
+      if (r && r.error) { toast(r.error); card.querySelectorAll(".erow button").forEach(b => b.disabled = false); }
+    };
+    const who = d.by || (m && m.speaker) || "the model";
+    const ok = card.querySelector("[data-eok]"), no = card.querySelector("[data-eno]");
+    if (ok) ok.onclick = () => {
+      const all = [...card.querySelectorAll("[data-en]")], yes = all.filter(c => c.checked).map(c => c.dataset.en), not = all.filter(c => !c.checked).map(c => c.dataset.en);
+      if (!yes.length) return answer(`Don't apply any of ${who}'s proposed edits.`);
+      answer(`Approved: edit${yes.length > 1 ? "s" : ""} ${yes.join(", ")} from ${who}'s proposed edits. Apply ${yes.length > 1 ? "them" : "it"} exactly as written.` +
+             (not.length ? ` Not approved: ${not.join(", ")} (don't apply ${not.length > 1 ? "those" : "that one"}).` : ""));
+    };
+    if (no) no.onclick = () => answer(`Don't apply any of ${who}'s proposed edits.`);
+  });
+}
 function markLatest() {
   const all = [...$("log").querySelectorAll(".msg[data-mid]")];
   let lastUser = -1;
@@ -1739,33 +2157,48 @@ $("search").addEventListener("keydown", e => { if (e.key === "Escape") { $("sear
 
 // ---------- export ----------
 async function chatMarkdown() {
-  const full = await api("/api/state?after=0&lite=1");
-  const title = (document.querySelector("#title").textContent || "Chat").replace(/^.*› /, "");
-  const lines = [`# ${title}`, ""];
-  for (const m of full.messages) {
-    const when = new Date(m.created * 1000).toLocaleString();
-    if (m.kind === "system") lines.push(`> _${m.text.replace(/\n/g, " ")}_`, "");
-    else if (m.kind === "question") lines.push(`**${m.speaker} asked you** (${when}):`, "", m.text.replace(/^CHOICE:\s*/gm, "- "), "");
-    else if (m.kind === "command") lines.push(`**${m.speaker} asked to run:**`, "", "```", m.text, "```", "");
-    else if (m.kind === "output") lines.push("```", m.text, "```", "");
-    else lines.push(`**${m.speaker}** (${when}):`, "", m.text, "");
-  }
-  return {title, md: lines.join("\n")};
+  if (!currentChat) return {title: "Chat", md: ""};
+  const r = await api(`/api/export?kind=chat&id=${currentChat}`);
+  return {title: r.title || "Chat", md: r.md || ""};
 }
-$("menuBtn").onclick = e => { e.stopPropagation(); $("menu").classList.toggle("show"); };
-document.addEventListener("click", () => $("menu").classList.remove("show"));
-$("exportMd").onclick = async () => {
-  const {title, md} = await chatMarkdown();
+async function projectMarkdown(full) {
+  const r = await api(`/api/export?kind=project&id=${currentProject}&full=${full ? 1 : 0}`);
+  return {title: r.title || "Project", md: r.md || ""};
+}
+// save a Markdown file: a download on the PC, the share sheet in the phone app
+function saveMarkdown({title, md}) {
+  if (!md) return toast("Nothing to export yet.");
+  if (APP) return APP.share(title + ".md", md);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([md], {type: "text/markdown"}));
   a.download = title.replace(/[<>:"/\\|?*]+/g, " ").trim().slice(0, 60) + ".md";
   document.body.appendChild(a); a.click(); a.remove();
-};
+  toast("Saved to your Downloads folder.");
+}
+// Claude makes the Google Doc (it needs Allow doc edits on in the chat it's asked in)
+async function toGoogleDoc(kind, id, title, inNewProjectChat) {
+  if (!confirm(`Claude will create a new Google Doc called \u201c${title}\u201d in your Drive from this export. ` +
+               "That needs Allow doc edits on in the chat it's asked in, so it'll be switched on there. Go ahead?")) return;
+  const f = await api("/api/export/file", {kind, id, full: 0});
+  if (f.error) return toast(f.error);
+  if (inNewProjectChat) { await api("/api/new", {project_id: currentProject}); await new Promise(r => setTimeout(r, 300)); }
+  await api("/api/chat-settings", {allow_edits: true});
+  const r = await api("/api/send", {text: `@claude Please create a new Google Doc in my Google Drive named "${title}" with the content of the exported file ${f.path} ` +
+    "(read the file first; keep its headings, lists and tables). This is my approval to create that one new doc. Reply with its link."});
+  if (r && r.error) toast(r.error); else toast("Asked Claude to make the doc.");
+}
+$("menuBtn").onclick = e => { e.stopPropagation(); $("menu").classList.toggle("show"); };
+document.addEventListener("click", () => $("menu").classList.remove("show"));
+$("exportMd").onclick = async () => saveMarkdown(await chatMarkdown());
+$("exportProj").onclick = $("projExport").onclick = async () => saveMarkdown(await projectMarkdown(false));
+$("exportProjAll").onclick = $("projExportAll").onclick = async () => saveMarkdown(await projectMarkdown(true));
+$("chatToDoc").onclick = async () => { if (!currentChat) return toast("Open a chat first."); toGoogleDoc("chat", currentChat, (await chatMarkdown()).title, false); };
+$("projToDoc").onclick = async () => toGoogleDoc("project", currentProject, (await projectMarkdown(false)).title, true);
 $("copyChat").onclick = async () => copyText((await chatMarkdown()).md);
 if (APP) {
   $("shareChat").style.display = "";
   $("shareChat").onclick = async () => { const {title, md} = await chatMarkdown(); APP.share(title, md); };
-  $("exportMd").onclick = async () => { const {title, md} = await chatMarkdown(); APP.share(title + ".md", md); };
+
 } else if (navigator.share) {
   $("shareChat").style.display = "";
   $("shareChat").onclick = async () => {
@@ -1775,7 +2208,7 @@ if (APP) {
 }
 
 // ---------- collapsible cards ----------
-let collapsed = new Set(["connections", "discussion", "tips", "skills"]), collapsedLoaded = false;
+let collapsed = new Set(["connections", "discussion", "tips", "skills", "shortcuts"]), collapsedLoaded = false;
 function applyCollapsed() {
   document.querySelectorAll(".card[data-card]").forEach(c => c.classList.toggle("collapsed", collapsed.has(c.dataset.card)));
 }
@@ -1789,6 +2222,58 @@ applyCollapsed();
 
 // ---------- skills ----------
 let skillsSig = "";
+// ---------- slash shortcuts ----------
+let shortcutList = [], scShown = [], scPick = 0, scSig = "", scEditing = null;
+function scMenuOpen() { return $("scMenu").classList.contains("show") && scShown.length; }
+function renderScMenu() {
+  const v = $("input").value, m = v.match(/^\/([a-z0-9-]*)$/i);
+  if (!m) { $("scMenu").classList.remove("show"); return; }
+  const q = m[1].toLowerCase();
+  const list = shortcutList.filter(x => x.name.startsWith(q)).concat(shortcutList.filter(x => !x.name.startsWith(q) && x.name.includes(q)));
+  if (list.map(x => x.name).join() !== scShown.map(x => x.name).join()) scPick = 0;
+  scShown = list;
+  if (!list.length) { $("scMenu").classList.remove("show"); return; }
+  scPick = (scPick + list.length) % list.length;
+  $("scMenu").innerHTML = list.map((x, i) => `<button type="button" class="${i === scPick ? "on" : ""}" data-sc="${i}"><b>/${esc(x.name)}</b><small>${esc(x.description || "")}</small></button>`).join("");
+  $("scMenu").querySelectorAll("[data-sc]").forEach(b => b.onmousedown = e => { e.preventDefault(); chooseShortcut(scShown[+b.dataset.sc]); });
+  $("scMenu").classList.add("show");
+  const on = $("scMenu").querySelector(".on"); if (on) on.scrollIntoView({block: "nearest"});
+}
+function chooseShortcut(x) {
+  if (!x) return;
+  $("input").value = "/" + x.name + " "; $("scMenu").classList.remove("show"); $("input").focus(); grow();
+  $("sendBtn").disabled = false;
+}
+function renderShortcuts(list) {
+  if (!list) return;
+  shortcutList = list;
+  const sig = JSON.stringify(list);
+  if (sig === scSig) return;
+  scSig = sig;
+  $("scList").innerHTML = list.map(x => `<div class="scrow"><b>/${esc(x.name)}</b><small title="${esc(x.instructions)}">${esc(x.description || "")}${x.only ? ` · only ${x.only === "gpt" ? "GPT" : "Claude"}` : ""}</small>
+    ${x.custom ? `<span class="lnk" data-scedit="${esc(x.name)}">Edit</span><span class="lnk" data-scdel="${esc(x.name)}">Delete</span>` : `<span class="lnk" data-sccopy="${esc(x.name)}" title="Make your own version of this shortcut">Customize</span>`}</div>`).join("");
+  const mine = () => shortcutList.filter(x => x.custom).map(({name, description, instructions, only}) => ({name, description, instructions, only}));
+  $("scList").querySelectorAll("[data-scdel]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Delete /${b.dataset.scdel}?`)) return;
+    await api("/api/shortcuts", {items: mine().filter(x => x.name !== b.dataset.scdel)});
+  });
+  const openForm = (x, editingName) => {
+    scEditing = editingName; $("scForm").classList.add("show"); $("scErr").textContent = "";
+    $("scName").value = x ? x.name : ""; $("scDesc").value = x ? x.description || "" : ""; $("scInstr").value = x ? x.instructions : ""; $("scOnly").value = x ? x.only || "" : "";
+    $("scName").focus();
+  };
+  $("scList").querySelectorAll("[data-scedit]").forEach(b => b.onclick = () => openForm(shortcutList.find(x => x.name === b.dataset.scedit), b.dataset.scedit));
+  $("scList").querySelectorAll("[data-sccopy]").forEach(b => b.onclick = () => openForm(shortcutList.find(x => x.name === b.dataset.sccopy), null));
+  $("scAdd").onclick = () => openForm(null, null);
+  $("scCancel").onclick = () => $("scForm").classList.remove("show");
+  $("scSave").onclick = async () => {
+    const item = {name: $("scName").value.trim().replace(/^\//, "").toLowerCase(), description: $("scDesc").value.trim(), instructions: $("scInstr").value.trim(), only: $("scOnly").value};
+    const items = mine().filter(x => x.name !== scEditing && x.name !== item.name).concat([item]);
+    const r = await api("/api/shortcuts", {items});
+    if (r.error) { $("scErr").textContent = r.error; return; }
+    $("scForm").classList.remove("show"); toast(`Saved /${item.name}.`);
+  };
+}
 function renderSkills(skills, off, inProject) {
   const sig = JSON.stringify([skills, off, inProject]);
   if (sig === skillsSig || !skills) return;
@@ -2068,7 +2553,7 @@ async function send() {
   }
   const wasRunning = lastStatus === "running";
   const r = await api("/api/send", {text});
-  if (r && r.error) { toast(r.error); return; }
+  if (r && r.error) { toast(r.error); $("input").value = text; grow(); return; }     // keep what you wrote
   if (wasRunning) toast("Sent. They'll read it on their next turn. Press ■ to stop them instead.");
 }
 let busySeen = null;
@@ -2101,8 +2586,15 @@ try {
 } catch (e) {}
 const TOUCH = window.matchMedia("(pointer: coarse)").matches;
 $("input").addEventListener("keydown", e => {
+  if (scMenuOpen()) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); scPick += e.key === "ArrowDown" ? 1 : -1; renderScMenu(); return; }
+    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); chooseShortcut(scShown[scPick]); return; }
+    if (e.key === "Escape") { e.preventDefault(); $("scMenu").classList.remove("show"); return; }
+  }
   if (e.key === "Enter" && !e.shiftKey && !(TOUCH && !e.ctrlKey)) { e.preventDefault(); send(); }   // phone: Enter = new line
 });
+$("input").addEventListener("input", renderScMenu);
+$("input").addEventListener("blur", () => setTimeout(() => $("scMenu").classList.remove("show"), 150));
 // phone: while typing, give the keyboard the tab bar's space
 function keyboardUp() {
   const vv = window.visualViewport;

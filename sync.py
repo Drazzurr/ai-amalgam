@@ -43,7 +43,7 @@ CODE_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "env",
 CODE_SKIP_EXT = (".pyc", ".log")
 # settings that follow you between devices (others, like notifications, are per device)
 # (GPT's runner key is "gpt", so its speed is saved as speed_gpt)
-GLOBAL_SETTINGS = ("max_rounds", "check_questions", "speed_claude", "speed_gpt", "skills_off")
+GLOBAL_SETTINGS = ("max_rounds", "check_questions", "speed_claude", "speed_gpt", "skills_off", "shortcuts_custom")
 PROJECT_SETTINGS = ("speed_claude_project_{}", "speed_gpt_project_{}", "skills_off_project_{}",
                     "allowed_cmds_project_{}", "allow_edits_project_{}")
 FULL_CHECK_EVERY = 6 * 3600        # seconds: even unchanged-looking chats are fully re-merged this often

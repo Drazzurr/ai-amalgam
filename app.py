@@ -319,6 +319,9 @@ class App:
         self._switch_lock = threading.RLock()
         self._orch_cfg = {}        # app-wide settings every orchestrator gets (device, Blender, game folders)
         self._orch_cfg["blender_on"] = self.orch.blender_on
+        from jobqueue import JobQueue
+        self.queue = JobQueue(self)
+        self.queue.notify = toast
         self.phone = bool(getattr(args, "phone", False))
         if self.phone:
             ident = phone_identity()
@@ -394,6 +397,10 @@ class App:
 
     def all_orchs(self):
         return [self.orch] + [o for o in list(self.background.values()) if o is not self.orch]
+
+    def queue_has_work(self):
+        q = getattr(self, "queue", None)
+        return bool(q) and q.running and any(j["status"] in ("queued", "running") for j in self.store.jobs())
 
     def any_running(self):
         return any(o.status == "running" for o in self.all_orchs())
@@ -512,6 +519,57 @@ class App:
                     c[1], c[2] = time.time(), False
             threading.Thread(target=work, daemon=True).start()
         return c[0]
+
+    def build_mod(self, code_dir, opts):
+        """Package the mod in the background (big mods take a while); the window polls /api/mod/status."""
+        if getattr(self, "mod_build", {}).get("state") == "running":
+            return {"error": "Already packaging."}
+        self.mod_build = {"state": "running", "started": time.time()}
+        chat_id = self.orch.chat_id
+
+        def work():
+            import modpack
+            try:
+                path, rep = modpack.build(code_dir, opts)
+                self.mod_build = {"state": "done" if path else "failed", "path": path, "report": rep}
+                if chat_id and self.store.chat_title(chat_id) is not None:
+                    # so the models know how it went (and can help fix any warnings)
+                    self.store.add(chat_id, "Packager", "output", "$ package mod\n" + modpack.summary(rep))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.mod_build = {"state": "failed", "error": f"Packaging failed: {e}"}
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True}
+
+    def image_allowed(self, p):
+        """Pictures the window may show: Amalgam's own folders, game folders, and project code folders."""
+        roots = [WORKSPACE] + list(self.orch.game_folders or []) + \
+            [pr["code_dir"] for pr in self.store.projects() if pr.get("code_dir")]
+        for r in roots:
+            try:
+                r = os.path.realpath(r)
+                if os.path.commonpath([p, r]) == r:
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    def export(self, q):
+        """Markdown for a chat (kind=chat&id=) or a project (kind=project&id=, full=1 for every chat too)."""
+        import exporter
+        kind = q.get("kind", ["chat"])[0]
+        try:
+            ident = int(q.get("id", ["0"])[0] or 0)
+        except ValueError:
+            ident = 0
+        if kind == "project":
+            title, md = exporter.project_md(self.store, ident, full=q.get("full", ["0"])[0] in ("1", "true", "True"))
+        else:
+            title, md = exporter.chat_md(self.store, ident) if self.store.chat_title(ident) is not None else (None, None)
+        if md is None:
+            return {"error": "Nothing to export."}
+        return {"title": title, "md": md}
 
     def _after_import(self, chat_ids):
         """Another device's changes just arrived. Refresh what the open chat is waiting on."""
@@ -1065,6 +1123,7 @@ class App:
                     else:
                         state["messages"] = app.store.messages(state["chat_id"], after) if state["chat_id"] else []
                     state["sync_rev"] = app.sync.rev
+                    state["queue"] = app.queue.summary()
                     state["busy_chats"] = app.busy_chats()
                     if q.get("lite", ["0"])[0] == "1":   # quick refresh while models talk
                         return self._json(state)
@@ -1089,6 +1148,8 @@ class App:
                         state["linux_start"] = app.announcer.timing()
                     state["check_questions"] = app.orch.check_questions
                     state["skills"] = app._cached("skills", 20, list_skills)
+                    import shortcuts
+                    state["shortcuts"] = shortcuts.all_shortcuts(app.store)
                     state["skills_off"] = app.orch.skills_off()
                     state["apps"] = app.apps_view()
                     state["cli"] = {"versions": getattr(app, "cli_versions", {}),
@@ -1105,19 +1166,15 @@ class App:
                     state["tag"] = tag
                     return self._json(state)
                 if url.path == "/api/img":
-                    raw = parse_qs(url.query).get("path", [""])[0]
+                    q = parse_qs(url.query)
+                    raw = q.get("path", [""])[0]
                     p = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(WORKSPACE, raw))
-                    roots = [WORKSPACE] + list(app.orch.game_folders) + [app.orch.code_dir() or WORKSPACE]
-
-                    def under(r):
-                        try:
-                            r = os.path.realpath(r)
-                            return os.path.commonpath([p, r]) == r
-                        except ValueError:
-                            return False
-                    if not any(under(r) for r in roots) or not os.path.isfile(p) or \
+                    if not app.image_allowed(p) or not os.path.isfile(p) or \
                             not p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")):
                         return self._json({"error": "not found"}, 404)
+                    if q.get("thumb", ["0"])[0] == "1":
+                        import gallery
+                        p = gallery.thumbnail(p, os.path.join(WORKSPACE, ".thumbs")) or p
                     with open(p, "rb") as f:
                         body = f.read()
                     self.send_response(200)
@@ -1132,6 +1189,17 @@ class App:
                     before = int(parse_qs(url.query).get("before", ["0"])[0] or 0)
                     msgs, left = app.store.messages_tail(app.orch.chat_id, 80, before) if app.orch.chat_id else ([], 0)
                     return self._json({"messages": msgs, "earlier": left})
+                if url.path == "/api/mod/status":
+                    return self._json(getattr(app, "mod_build", {"state": "idle"}))
+                if url.path == "/api/jobs":
+                    return self._json(app.queue.view())
+                if url.path == "/api/gallery":
+                    import gallery
+                    scope = parse_qs(url.query).get("scope", ["all"])[0]
+                    scope = int(scope) if scope.isdigit() else scope if scope in ("all", "none") else "all"
+                    return self._json({"items": gallery.collect(app.store, WORKSPACE, scope, app.image_allowed)})
+                if url.path == "/api/export":
+                    return self._json(app.export(parse_qs(url.query)))
                 if url.path == "/api/search":
                     return self._json({"results": app.store.search(parse_qs(url.query).get("q", [""])[0])})
                 if url.path.startswith("/api/code/"):
@@ -1296,6 +1364,78 @@ class App:
                         app.store.set_setting("auto_update", "1" if data.get("auto_update") else "0")
                     if data.get("keep_running") is not None:
                         app.store.set_setting("keep_running", "1" if data.get("keep_running") else "0")
+                elif path.startswith("/api/jobs/"):
+                    q, what = app.queue, path.rsplit("/", 1)[1]
+                    jid = int(data.get("id") or 0)
+                    if what == "add":
+                        pid = data.get("project_id")
+                        texts = [t for t in (data.get("texts") or [data.get("text", "")]) if str(t).strip()]
+                        if not texts:
+                            return self._json({"error": "Write what the job should do."}, 400)
+                        for t in texts[:50]:
+                            q.add(str(t), int(pid) if pid else None)
+                    elif what == "run":
+                        q.set_running(bool(data.get("on")))
+                    elif what == "remove":
+                        app.store.delete_job(jid)
+                    elif what == "move":
+                        app.store.move_job(jid, int(data.get("dir") or 1))
+                    elif what == "retry":
+                        q.retry(jid)
+                    elif what == "stop":
+                        q.stop(jid)
+                    elif what == "clear":
+                        app.store.clear_finished_jobs()
+                    elif what == "settings":
+                        try:
+                            app.store.set_setting("queue_rounds", max(2, min(20, int(data.get("rounds") or 6))))
+                        except ValueError:
+                            pass
+                    else:
+                        return self._json({"error": "unknown"}, 404)
+                    return self._json(dict(q.view(), ok=True))
+                elif path in ("/api/mod/check", "/api/mod/build"):
+                    import modpack
+                    code_dir = app.orch.code_dir()
+                    if not code_dir:
+                        return self._json({"error": "This project has no code folder."}, 400)
+                    opts = {k: data[k] for k in ("name", "version", "author", "description", "url", "game",
+                                                 "include_source", "fomod") if data.get(k) is not None}
+                    if path == "/api/mod/check":
+                        return self._json(modpack.check(code_dir, opts))
+                    return self._json(app.build_mod(code_dir, opts))
+                elif path == "/api/gallery/attach":
+                    # pictures from the gallery go with your next message, like files you attach
+                    inbox = os.path.join(WORKSPACE, "attachments", "inbox")
+                    os.makedirs(inbox, exist_ok=True)
+                    added = 0
+                    for raw in (data.get("paths") or [])[:12]:
+                        src = os.path.realpath(str(raw))
+                        if not (app.image_allowed(src) and os.path.isfile(src)):
+                            continue
+                        name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", os.path.basename(src))[:120]
+                        dest = os.path.join(inbox, secrets.token_hex(4) + "_" + name)
+                        shutil.copyfile(src, dest)
+                        app.orch.pending_files.append({"name": name, "abs": dest, "size": os.path.getsize(dest)})
+                        added += 1
+                    return self._json({"ok": True, "added": added})
+                elif path == "/api/export/file":
+                    # saved in Amalgam's workspace, where Claude can read it (e.g. to put it in a Google Doc)
+                    out = app.export({k: [str(v)] for k, v in data.items()})
+                    if out.get("error"):
+                        return self._json(out, 404)
+                    import exporter
+                    folder = os.path.join(WORKSPACE, "exports")
+                    os.makedirs(folder, exist_ok=True)
+                    path = os.path.join(folder, exporter.safe_filename(out["title"]) + time.strftime(" %Y-%m-%d %H%M") + ".md")
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(out["md"])
+                    return self._json({"ok": True, "path": path, "title": out["title"]})
+                elif path == "/api/shortcuts":
+                    import shortcuts
+                    err = shortcuts.save_custom(app.store, data.get("items"))
+                    if err:
+                        return self._json({"error": err}, 400)
                 elif path == "/api/skills/toggle":
                     app.orch.set_skill(str(data.get("name", "")), bool(data.get("on")))
                 elif path == "/api/ui":
@@ -1325,8 +1465,7 @@ class App:
                 elif path == "/api/reveal":
                     raw = str(data.get("path", ""))
                     p = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(WORKSPACE, raw))
-                    root = os.path.realpath(WORKSPACE)
-                    if os.path.commonpath([p, root]) == root and os.path.exists(p):
+                    if app.image_allowed(p) and os.path.exists(p):
                         if sys.platform == "win32":
                             if data.get("folder"):
                                 subprocess.Popen(["explorer", "/select,", p])
@@ -1445,8 +1584,8 @@ class App:
         last = self.last_seen
         bye_closed = bool(self.bye_at and now - self.bye_at > BYE_GRACE and (last or 0) < self.bye_at)
         gone = bye_closed or (last is not None and now - last > IDLE_LIMIT)
-        # Models still working: keep going in the background, even with the window closed.
-        if self.any_running():
+        # Models still working (or queued jobs waiting their turn): keep going, even with the window closed.
+        if self.any_running() or self.queue_has_work():
             self._busy_until = now + 6
             if gone and self._told_at < (last or 0) + 1:
                 self._told_at = now
@@ -1492,6 +1631,7 @@ class App:
             json.dump({"port": self.port, "token": self.token, "pid": os.getpid()}, f)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         threading.Thread(target=self._notifier, daemon=True).start()
+        threading.Thread(target=self.queue.loop, args=(self.quit_event,), daemon=True).start()
         if self.phone and sys.platform.startswith("linux"):
             from portannounce import PortAnnouncer
             # several tries: the earliest one usually lands as soon as the watcher is ready

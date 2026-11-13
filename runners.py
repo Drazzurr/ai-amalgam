@@ -942,6 +942,14 @@ class DemoRunner(Runner):
             lines = [f"({self.name}, demo) Fair point, but I still think we need this now.",
                      "CHOICE: GPT's way - ask now", "CHOICE: Claude's way - draft more first",
                      "NEED USER: Should we decide speed vs polish now, or draft more first?"]
+        elif self.key == "claude" and "propose an edit" in prompt.lower() and "proposed these document edits" not in prompt:
+            lines = [f"({self.name}, demo) Here are the edits I suggest.",
+                     "EDIT 1", "DOC: https://docs.google.com/document/d/1CrBAFuo12Bznhkj9sTx-m11v5IXCA_GdnEhMh-PA8Ok/edit",
+                     "WHERE: Overview, first paragraph", "FIND:", "The city of Varn was founded in the Third Age by exiles.",
+                     "REPLACE WITH:", "The city of Varn was founded late in the Third Age by exiled smiths.", "END EDIT",
+                     "EDIT 2", "WHERE: after the Factions heading", "FIND:", "REPLACE WITH:",
+                     "The Ember Guild controls the forges.", "END EDIT",
+                     "NEED USER: Shall I apply these edits?"]
         elif self.turns == 2 and self.key == "gpt":
             lines += ["CHOICE: Speed first", "CHOICE: Polish first", "CHOICE: A bit of both",
                       "NEED USER: Should we aim for speed or for polish first?"]

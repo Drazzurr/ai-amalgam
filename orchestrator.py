@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 
+import docedits
 from codework import COMMAND_TIMEOUT, check_code_dir, run_command
 
 # Each turn re-sends the conversation. Above this size, the oldest middle
@@ -133,6 +134,7 @@ You are working inside it (it is your current folder). {role}
 - To run anything (tests, scripts, installs, git, builds), put each command on its own line just above your last line, as: RUN: <command>
   The app shows them to the user, who approves or denies them; then everyone sees the output. Commands run in {shell} in the code folder, with a {timeout}-second limit each. Don't run servers, watchers or anything interactive; tell the user how to start those instead. At most 3 commands per message. Prefer read-only checks before anything that changes the system, and never run anything destructive (deleting folders, git push, force-resets) unless the user asked for exactly that.
 - Never read or change files outside the code folder.
+- For a Skyrim mod, the user can check and package the folder as an installable .zip (optionally with a FOMOD installer) with the Package mod button in the Code tab; its report shows up here as a Packager result.
 - Work as a team: the editor makes changes in small, reviewable steps and says what changed and why; the reviewer reads the changed files and the diff, points out real bugs or risks, and suggests concrete fixes. Test changes by asking to run them.
 {changes}"""
 
@@ -186,17 +188,20 @@ You can create images with your image generation tool (the user's ChatGPT plan c
 EDITS_ON_EDITOR = """
 Document editing is ON, and you are the one who applies edits. Rules:
 1. First agree on the change in the discussion.
-2. Batch your edits: draft as many agreed changes as you sensibly can, then ask for approval once for the whole batch. List each change in your message (which document, where, the new text) and end with NEED USER. Don't stop to ask after every small change.
+2. Batch your edits: draft as many agreed changes as you sensibly can, then ask for approval once for the whole batch, ending with NEED USER. Don't stop to ask after every small change.
+{edit_format}
 3. Apply only the changes the user's most recent message clearly approves (they may approve some and not others). Then say exactly what you changed.
 4. Change only what was approved. Never delete whole sections, rename, move, share or trash files.
 """
 
 EDITS_ON_OTHER = """
-Document editing is ON, but only {editor} applies edits (after the user approves). Do NOT edit documents yourself, even if a tool lets you. Help shape the exact wording of proposed changes.
+Document editing is ON, but only {editor} applies edits (after the user approves). Do NOT edit documents yourself, even if a tool lets you. Help shape the exact wording of proposed changes. When you propose a change yourself, use the same EDIT block format:
+{edit_format}
 """
 
 EDITS_OFF = """
-Document editing is OFF: read documents but never change them. If the group agrees on a change, write out the exact new text so the user can apply it, and mention they can switch on "Allow doc edits" in the app.
+Document editing is OFF: read documents but never change them. If the group agrees on a change, write it as an EDIT block so the user sees exactly what changes and can copy the new text, and mention they can switch on "Allow doc edits" in the app.
+{edit_format}
 """
 
 
@@ -675,6 +680,11 @@ class Orchestrator:
         try:
             mentioned = {m.lower() for m in MENTION_RE.findall(trigger_text)}
             mentioned = {"gpt" if m in ("chatgpt", "codex") else m for m in mentioned}
+            if not mentioned:      # a shortcut meant for one model (e.g. a custom "/ask-gpt")
+                import shortcuts
+                sc = shortcuts.match(trigger_text or self._last_user_text(), self.store)
+                if sc and sc.get("only"):
+                    mentioned = {sc["only"]}
             if not self._active():
                 self._note("No models are switched on in this chat. Tap one at the top, or turn one on under In this chat.")
                 return
@@ -777,7 +787,8 @@ class Orchestrator:
         runner = self.runners[order[0]]
         self.speaker = runner.name
         self.live = {"activity": "condensing earlier messages", "text": "", "rev": self.live["rev"] + 1}
-        lines = [f"[{m['speaker']}]: {m['text']}" for m in older]
+        lines = [f"[{m['speaker']}]: " + (docedits.for_transcript(m["text"]) if m["kind"] == "edits" else m["text"])
+                 for m in older]
         prompt = CONDENSE_PROMPT.format(
             existing=f"=== CURRENT SUMMARY ===\n{summary}\n\n" if summary else "",
             messages="\n\n".join(lines)[:60000])
@@ -897,7 +908,24 @@ class Orchestrator:
             else:
                 keep.append(line)
         body = "\n".join(keep).strip() or body
-        self.store.add(self.chat_id, runner.name, "model", body)
+        edits = []
+        if "EDIT" in body and "END EDIT" in body:
+            body, edits = docedits.parse(body)
+        if edits:
+            link = self.chat_settings().get("doc_link") or (self.store.project(self.project_id) or {}).get("doc_link") or ""
+
+            def saved_text(doc_id):
+                from runners import doc_copy
+                path, _age = doc_copy(self.workspace, doc_id)
+                if not path:
+                    return None
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    return f.read()
+            edits = docedits.enrich(edits, link, saved_text)
+        if body or not edits:
+            self.store.add(self.chat_id, runner.name, "model", body or "(nothing to add)")
+        if edits:
+            self.store.add(self.chat_id, runner.name, "edits", docedits.to_message(runner.name, edits))
         for img in getattr(runner, "last_images", []) or []:
             self.store.add(self.chat_id, runner.name, "image", img)
         self._record_change(code_dir, before, runner.name)
@@ -1223,6 +1251,15 @@ class Orchestrator:
         """Id of your newest message in the open chat (0 if you haven't written anything there)."""
         return self.store.last_user_id(self.chat_id) if self.chat_id else 0
 
+    def _last_user_text(self):
+        last = self._last_user_id()
+        if not last:
+            return ""
+        for m in self.store.messages(self.chat_id, after=last - 1):
+            if m["id"] == last:
+                return m["text"]
+        return ""
+
     def _user_spoke(self):
         """You sent a message after the current model started its turn."""
         return self._last_user_id() > getattr(self, "_q_mark", 0)
@@ -1337,9 +1374,10 @@ class Orchestrator:
         if key == "gpt":
             doc += IMAGE_LINE
         if settings.get("allow_edits") and editor:
-            doc += EDITS_ON_EDITOR if runner.can_edit_docs else EDITS_ON_OTHER.format(editor=editor)
+            doc += (EDITS_ON_EDITOR.format(edit_format=docedits.FORMAT_HELP) if runner.can_edit_docs
+                    else EDITS_ON_OTHER.format(editor=editor, edit_format=docedits.FORMAT_HELP))
         elif tools:
-            doc += EDITS_OFF
+            doc += EDITS_OFF.format(edit_format=docedits.FORMAT_HELP)
 
         code_dir = self.code_dir()
         if self.blender_on:
@@ -1391,6 +1429,8 @@ class Orchestrator:
         lines = [f"[Summary of the earlier part of this conversation]:\n{summary}"] if summary else []
         all_msgs = self.store.messages(self.chat_id) if self.chat_id else []
         device = self._device_line(all_msgs)
+        import shortcuts
+        sc_list = {s["name"]: s for s in shortcuts.all_shortcuts(self.store)}
         last_dev = None
         for m in all_msgs:
             if m["id"] <= upto:
@@ -1401,6 +1441,8 @@ class Orchestrator:
                 lines.append(f"[{m['speaker']} asked the user]: {m['text']}")
             elif m["kind"] == "image":
                 lines.append(f"[{m['speaker']} made an image, saved at {m['text']}; open that file to look at it]")
+            elif m["kind"] == "edits":
+                lines.append(f"[{m['speaker']} proposed these document edits]:\n{docedits.for_transcript(m['text'])}")
             elif m["kind"] == "command":
                 lines.append(f"[{m['speaker']} asked to run]: " + "; ".join(m["text"].splitlines()))
             elif m["kind"] == "output":
@@ -1412,6 +1454,11 @@ class Orchestrator:
                 lines.append(f"[{m['speaker']}, from their {device_words(last_dev)}]: {m['text']}")
             else:
                 lines.append(f"[{m['speaker']}]: {m['text']}")
+            if m["kind"] == "user":
+                sc = re.match(r"^\s*/([a-z0-9][a-z0-9-]*)(?=\s|$)", m["text"], re.IGNORECASE)
+                sc = sc_list.get(sc.group(1).lower()) if sc else None
+                if sc:
+                    lines.append(f"[What the user's /{sc['name']} shortcut asks for]: {sc['instructions']}")
         if self._needs_title():
             extra = TITLE_LINE + extra
         off = self.skills_off()
