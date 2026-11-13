@@ -49,6 +49,28 @@ BUILTIN = [
      "instructions": "Use the game-files skill. Read the game file or archive the user named with READ lines and "
                      "report what's inside that matters for their goal. Go deeper (list, extract, records) where it "
                      "helps."},
+    {"name": "modlist", "description": "Build a mod list by answering a few questions (PC)",
+     "only": "", "pc_only": True,
+     "instructions": "Help the user build a mod list. First run MODS: overview to see their mod manager, game version "
+                     "and what's already installed. Then ask what you still need in one NEED USER question with "
+                     "choices (game and version, Steam or GOG, MO2 or Vortex, PC/VRAM, the style they want, must-have "
+                     "and must-not mods). Build the list in install order, grouped (essentials and fixes, then "
+                     "interface, visuals, gameplay, NPCs, patches): for each mod give its name, a Nexus link (MODS: "
+                     "nexus <name>), why it's there, its requirements, which FOMOD options to pick, and known "
+                     "conflicts. Check every requirement is in the list and every version matches their game "
+                     "version. Finish with the steps after installing (LOOT, Nemesis/Pandora, BodySlide, "
+                     "DynDOLOD) only where the list needs them. One of you drafts, the other checks requirements "
+                     "and conflicts before it reaches the user. In a project, offer to save the final list as a "
+                     "file in the code folder."},
+    {"name": "modcheck", "description": "Check your mod list and explain the last crash (PC)",
+     "only": "", "pc_only": True,
+     "instructions": "Diagnose the user's modded game. Run MODS: check (with the setup they named, if any) and "
+                     "MODS: crash. Explain each real problem in plain words, most serious first, with the exact fix "
+                     "(which mod to install, update, move or switch off; which FOMOD option; what to click in "
+                     "MO2/Vortex). READ plugins or meshes the results point at when that would confirm a cause. "
+                     "Separate what the logs prove from what is a likely guess. The other model double-checks the "
+                     "diagnosis before it reaches the user. Don't change any files; sorting or cleaning goes "
+                     "through the user's approval."},
     {"name": "brainstorm", "description": "Both models propose ideas, then pick the best together",
      "only": "",
      "instructions": "Each of you independently proposes 5 distinct ideas for what the user asked, with no overlap "
@@ -70,11 +92,13 @@ def custom(store):
     return out
 
 
-def all_shortcuts(store):
-    """Your own shortcuts first (they win over a built-in with the same name), then the built-in ones."""
+def all_shortcuts(store, phone=False):
+    """Your own shortcuts first (they win over a built-in with the same name), then the built-in ones.
+    On the phone, PC-only built-ins (the mod-list ones) are left out."""
     mine = custom(store)
     names = {s["name"] for s in mine}
-    return mine + [dict(s, custom=False) for s in BUILTIN if s["name"] not in names]
+    return mine + [dict(s, custom=False) for s in BUILTIN
+                   if s["name"] not in names and not (phone and s.get("pc_only"))]
 
 
 def save_custom(store, items):
@@ -98,10 +122,10 @@ def save_custom(store, items):
     return None
 
 
-def match(text, store):
+def match(text, store, phone=False):
     """The shortcut a message starts with (/name ...), or None."""
     m = re.match(r"^\s*/([a-z0-9][a-z0-9-]*)(?=\s|$)", text or "", re.IGNORECASE)
     if not m:
         return None
     name = m.group(1).lower()
-    return next((s for s in all_shortcuts(store) if s["name"] == name), None)
+    return next((s for s in all_shortcuts(store, phone) if s["name"] == name), None)

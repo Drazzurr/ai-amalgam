@@ -173,6 +173,15 @@ Folders you may read: {folders}. Never change files in game folders. The game-fi
 """
 RUN_RE = re.compile(r"^\W*RUN\s*:\s*(.+?)\s*$")
 MAX_RUNS = 3
+MODS_RE = re.compile(r"^\W*MODS\s*:\s*(.*?)\s*$")
+MAX_MODS = 2
+MODLISTS_LINE = """
+=== MOD LISTS (PC) ===
+You can look at the user's mod-manager setups (Mod Organizer 2, Vortex) for Skyrim SE/AE, LE and VR, read-only. Put a line MODS: <action> just above your last line (up to 2 lines). The app runs it right away and you get the result straight after:
+MODS: overview (setups, profiles, tools, recent crash logs) · MODS: check [setup] [order] (missing or misplaced masters, LE plugins in SE, plugin limits, SKSE and Address Library versions, SKSE log errors, file conflicts between mods) · MODS: mods [setup] (enabled mods in priority order) · MODS: crash [n or path] (explain the newest crash log) · MODS: tools (LOOT/xEdit found and the exact commands) · MODS: nexus <words> (a Nexus search link).
+[setup] is an MO2 instance or profile name ("Skyrim/Survival", "Default") or "vortex". Use these before guessing about the user's mods, and READ a plugin or mesh the results point at.
+Never claim you installed or downloaded a mod: the user downloads from Nexus Mods in their browser or mod manager. Give Nexus links (MODS: nexus) for mods you recommend, and say which FOMOD options to pick. Sorting with LOOT or cleaning with xEdit changes files: in a project with a code folder ask with RUN (the user approves), otherwise tell the user exactly what to click.
+"""
 
 DOC_LINE = """
 Project document for this chat: {link}
@@ -318,6 +327,7 @@ class Orchestrator:
         self.blender_servers = ["blender"]   # connector names to allow (the app adds any found with "blender")
         self.blender_path = None
         self.game_folders = []      # set by the app: detected game installs + folders you added
+        self.mods_on = False        # set by the app: mod-list checks (MODS: lines), PC only
         self.workspace = runners[0].workdir if runners else "."
 
     # ----- public actions (called from the web UI) -----
@@ -682,7 +692,7 @@ class Orchestrator:
             mentioned = {"gpt" if m in ("chatgpt", "codex") else m for m in mentioned}
             if not mentioned:      # a shortcut meant for one model (e.g. a custom "/ask-gpt")
                 import shortcuts
-                sc = shortcuts.match(trigger_text or self._last_user_text(), self.store)
+                sc = shortcuts.match(trigger_text or self._last_user_text(), self.store, not self.mods_on)
                 if sc and sc.get("only"):
                     mentioned = {sc["only"]}
             if not self._active():
@@ -881,11 +891,15 @@ class Orchestrator:
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
         reply, choices = split_choices(reply)
         reply, runs = split_runs(reply) if code_dir else (reply, [])
-        reads, kept_r = [], []
+        reads, kept_r, mod_reqs = [], [], []
         for line, in_code in fenced(reply.splitlines()):
             m = None if in_code else READ_RE.match(line)
+            mm = None if in_code or m or not self.mods_on else MODS_RE.match(line)
             if m and len(reads) < MAX_READS:
                 reads.append(m.group(1).strip().strip("`"))
+            elif mm:
+                if len(mod_reqs) < MAX_MODS:
+                    mod_reqs.append(mm.group(1).strip().strip("`") or "overview")
             elif not m:
                 kept_r.append(line)
         reply = "\n".join(kept_r)
@@ -935,6 +949,9 @@ class Orchestrator:
                 self._note("Saved to project memory: " + "; ".join(saved))
         for r in reads:
             self._read_file(r, runner.name)
+        for r in mod_reqs:
+            self._mods_check(r, runner.name)
+        reads = reads + mod_reqs
         if signal == "NEED USER":
             question = question or "(asked for your input)"
             # held back until a teammate has checked it (see _ask_user)
@@ -998,6 +1015,21 @@ class Orchestrator:
         if len(text) > 30000:
             text = text[:30000] + "\n[... cut; ask for something narrower, e.g. list <text> ...]"
         self.store.add(self.chat_id, "Reader", "output", f"$ read {path}" + (f" :: {query}" if query else "") + f"\n[for {who}]\n{text}")
+
+    def _mods_check(self, request, who):
+        """Answer a MODS: line with the mod-list checker (read-only)."""
+        import modlists
+        self.speaker = "Reader"
+        self.live = {"activity": "checking your mod list", "text": "", "rev": self.live["rev"] + 1}
+        try:
+            text = modlists.run(request, list(self.game_folders or []), self.workspace)
+        except Exception as e:
+            text = f"Couldn't check the mod list: {e}"
+        finally:
+            self.speaker = None
+        if len(text) > 30000:
+            text = text[:30000] + "\n[... cut; ask for something narrower ...]"
+        self.store.add(self.chat_id, "Reader", "output", f"$ mods {request}\n[for {who}]\n{text}")
 
     def _turn_reading(self, key):
         """A turn, plus up to three follow-ups when the model asked to read files."""
@@ -1392,6 +1424,8 @@ class Orchestrator:
         if self.game_folders:
             doc += GAMEFILES_LINE.format(out=self.extract_dir() if self.chat_id else os.path.join(self.workspace, "extracted"),
                                          folders="; ".join(self.game_folders[:12]))
+        if self.mods_on:
+            doc += MODLISTS_LINE
         if code_dir and self.blender_path:
             doc += BLENDER_HEADLESS.format(path=self.blender_path)
         if code_dir:
@@ -1430,7 +1464,7 @@ class Orchestrator:
         all_msgs = self.store.messages(self.chat_id) if self.chat_id else []
         device = self._device_line(all_msgs)
         import shortcuts
-        sc_list = {s["name"]: s for s in shortcuts.all_shortcuts(self.store)}
+        sc_list = {s["name"]: s for s in shortcuts.all_shortcuts(self.store, not self.mods_on)}
         last_dev = None
         for m in all_msgs:
             if m["id"] <= upto:
@@ -1448,7 +1482,8 @@ class Orchestrator:
             elif m["kind"] == "output":
                 cap = 16000 if m["speaker"] == "Reader" else 4000
                 out = m["text"] if len(m["text"]) <= cap else m["text"][:cap // 2] + "\n[...]\n" + m["text"][-cap // 2:]
-                lines.append(f"[{'File read' if m['speaker'] == 'Reader' else 'Command'} result]:\n{out}")
+                label = ("Mod check" if out.startswith("$ mods ") else "File read") if m["speaker"] == "Reader" else "Command"
+                lines.append(f"[{label} result]:\n{out}")
             elif m["kind"] == "user" and device_kind(m.get("device")) and device_kind(m.get("device")) != last_dev:
                 last_dev = device_kind(m.get("device"))      # say where it came from when that changes
                 lines.append(f"[{m['speaker']}, from their {device_words(last_dev)}]: {m['text']}")
