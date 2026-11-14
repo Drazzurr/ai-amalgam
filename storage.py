@@ -164,6 +164,23 @@ class Store:
             row = self._db.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
         return row[0] if row else default
 
+    def relocate(self, old, new):
+        """The app folder moved (e.g. from C: to D:): point saved file paths (chat pictures, code folders
+        inside it) at the new place. Returns how many messages changed."""
+        if not old or old == new:
+            return 0
+        pairs = [(old, new), (old.replace("\\", "/"), new.replace("\\", "/"))]
+        n = 0
+        with self._lock:
+            for o, nw in dict(pairs).items():
+                cur = self._db.execute("UPDATE messages SET text = REPLACE(text, ?, ?) WHERE instr(text, ?) > 0", (o, nw, o))
+                n += cur.rowcount or 0
+            for pid, cd in self._db.execute("SELECT id, code_dir FROM projects").fetchall():
+                if cd and (cd == old or cd.startswith(old + "\\") or cd.startswith(old + "/")):
+                    self._db.execute("UPDATE projects SET code_dir = ? WHERE id = ?", (new + cd[len(old):], pid))
+            self._db.commit()
+        return n
+
     def set_setting(self, key, value):
         with self._lock:
             old = self._db.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()

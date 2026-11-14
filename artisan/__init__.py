@@ -13,6 +13,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -316,19 +317,26 @@ class Artisan:
                     or next((a for a in rel.get("assets", []) if "portable" in a["name"].lower() and a["name"].endswith((".7z", ".zip"))), None)
                 if not asset:
                     raise RuntimeError("Couldn't find the ComfyUI download for Windows on GitHub.")
-                arc = os.path.join(tools_dir(), asset["name"])
+                target = self.comfy_dir()
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                arc = os.path.join(os.path.dirname(target), asset["name"])      # same drive as the install
                 if not os.path.isfile(arc):
                     self._download(asset["browser_download_url"], arc, f"ComfyUI {rel.get('tag_name', '')}")
                 from forge import archives
-                if arc.lower().endswith(".7z"):
+                if archives.kind(arc) == "7z":           # by its contents, not its name
                     self._say("Getting 7-Zip's tool to unpack it")
                     archives.ensure_7z()
                 self._say("Unpacking ComfyUI (a few minutes)")
-                archives.extract(arc, tools_dir())
-                if not (self._python() and self._main()):
-                    found = glob.glob(os.path.join(tools_dir(), "*", "ComfyUI", "main.py"))
-                    if found:
-                        self.store.set_setting("artisan_comfy_dir", os.path.dirname(os.path.dirname(found[0])))
+                unpack = target + ".unpack"
+                shutil.rmtree(unpack, ignore_errors=True)
+                archives.extract(arc, unpack)
+                found = glob.glob(os.path.join(unpack, "*", "ComfyUI", "main.py")) + glob.glob(os.path.join(unpack, "ComfyUI", "main.py"))
+                if found:
+                    inner = os.path.dirname(os.path.dirname(found[0]))
+                    os.makedirs(target, exist_ok=True)
+                    for name in os.listdir(inner):
+                        shutil.move(os.path.join(inner, name), os.path.join(target, name))
+                shutil.rmtree(unpack, ignore_errors=True)
                 if not (self._python() and self._main()):
                     raise RuntimeError("ComfyUI unpacked, but its files aren't where Amalgam expected.")
                 try:
@@ -360,6 +368,50 @@ class Artisan:
         finally:
             self.install_state["running"] = False
 
+    def move_to(self, folder):
+        """Use (or move ComfyUI and its models to) another folder, e.g. on a bigger drive."""
+        if not os.path.isabs(folder):
+            raise ValueError("Use a full folder path, like D:\\AI Amalgam Tools\\ComfyUI.")
+        old = self.comfy_dir()
+        if os.path.normcase(os.path.abspath(old)) == os.path.normcase(os.path.abspath(folder)):
+            return
+        new_has = os.path.isfile(os.path.join(folder, "ComfyUI", "main.py"))
+        old_has = bool(self._python() and self._main())
+        if new_has or not old_has:          # a ComfyUI already there, or nothing to move: just use the new place
+            os.makedirs(folder, exist_ok=True)
+            self.store.set_setting("artisan_comfy_dir", folder)
+            return
+        if os.path.isdir(folder) and os.listdir(folder):
+            raise ValueError("To move ComfyUI there, pick an empty (or new) folder.")
+        with self._lock:
+            if self.install_state["running"] or self.busy:
+                raise ValueError("The Artisan is busy. Try again when it's done.")
+            self.install_state = {"running": True, "step": "Moving ComfyUI and its models", "done": 0, "total": 0,
+                                  "error": "", "finished": False}
+        threading.Thread(target=self._move, args=(old, folder), daemon=True).start()
+
+    def _move(self, old, new):
+        try:
+            self.stop()
+            total = sum(os.path.getsize(os.path.join(dp, f)) for dp, _d, fs in os.walk(old) for f in fs)
+            done = 0
+            os.makedirs(new, exist_ok=True)
+            for dp, ds, fs in os.walk(old):         # copy everything first, so nothing is lost if it fails half way
+                rel = os.path.relpath(dp, old)
+                os.makedirs(os.path.join(new, rel), exist_ok=True)
+                for f in fs:
+                    shutil.copy2(os.path.join(dp, f), os.path.join(new, rel, f))
+                    done += os.path.getsize(os.path.join(dp, f))
+                    self._say("Moving ComfyUI and its models", done, total)
+            self.store.set_setting("artisan_comfy_dir", new)
+            shutil.rmtree(old, ignore_errors=True)
+            self._say("Moved")
+            self.install_state["finished"] = True
+        except Exception as e:
+            self.install_state["error"] = f"Couldn't move it ({e}). It's still in the old place and still works."
+        finally:
+            self.install_state["running"] = False
+
     def update_comfy(self):
         """Run ComfyUI's own updater (portable install)."""
         d = self.comfy_dir()
@@ -379,10 +431,11 @@ class Artisan:
                 raise ValueError("Use the address of ComfyUI on this PC, like http://127.0.0.1:8000.")
             self.store.set_setting("artisan_comfy_url", url)
         if folder is not None:
-            folder = folder.strip()
-            if folder and not os.path.isdir(folder):
-                raise ValueError("That folder doesn't exist.")
-            self.store.set_setting("artisan_comfy_dir", folder)
+            folder = folder.strip().strip('"').rstrip("\\/")
+            if folder:
+                self.move_to(folder)
+            else:
+                self.store.set_setting("artisan_comfy_dir", "")
         if workflow is not None:
             workflow = workflow.strip()
             if workflow:

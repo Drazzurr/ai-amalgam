@@ -310,6 +310,16 @@ class App:
         os.makedirs(WORKSPACE, exist_ok=True)
         os.makedirs(DATA_DIR, exist_ok=True)
         self.store = Store(DB_FILE)
+        # moved the app folder (e.g. to another drive)? fix the saved paths to pictures and folders inside it
+        old_ws = self.store.get_setting("workspace_dir", "")
+        if old_ws and os.path.normcase(old_ws) != os.path.normcase(WORKSPACE):
+            try:
+                n = self.store.relocate(old_ws, WORKSPACE)
+                print(f"App folder moved: updated {n} saved paths ({old_ws} -> {WORKSPACE}).")
+            except Exception as e:
+                print("Couldn't update saved paths after the move:", e)
+        if old_ws != WORKSPACE:
+            self.store.set_setting("workspace_dir", WORKSPACE)
         from codework import Checkpoints
         self.orch = Orchestrator(self.store, make_runners(WORKSPACE, demo=args.demo), Checkpoints(DATA_DIR))
         # Chats whose discussion kept going after you opened another chat (chat id -> its orchestrator).

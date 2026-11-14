@@ -2658,6 +2658,8 @@ function renderApps(apps) {
         ${ar.installed && !ar.own ? `<button class="btn" id="artUpdate">Update ComfyUI</button>` : ""}
         ${ar.running ? `<button class="btn" id="artStop" title="Close ComfyUI now and free the graphics card">Free graphics card</button>` : ""}</div>
       <details style="margin-top:8px"><summary class="st" style="cursor:pointer">Advanced</summary>
+        <div class="st" style="margin-top:6px">Where ComfyUI and its models live (about 25 GB). Pick a folder on a bigger drive; if it's already installed, Amalgam moves it there:</div>
+        <div style="display:flex;gap:6px;margin-top:4px"><input class="field" id="artDir" placeholder="D:\\AI Amalgam Tools\\ComfyUI" value="${esc(ar.own ? "" : ar.dir || "")}" style="flex:1"><button class="btn" id="artDirSave">Save</button></div>
         <div class="st" style="margin-top:6px">Already have ComfyUI (e.g. ComfyUI Desktop)? Put its address here instead of installing another one:</div>
         <div style="display:flex;gap:6px;margin-top:4px"><input class="field" id="artUrl" placeholder="http://127.0.0.1:8000" value="${esc(ar.own ? ar.url : "")}" style="flex:1"><button class="btn" id="artUrlSave">Save</button></div>
         <div class="st" style="margin-top:6px">Your own 3D workflow (ComfyUI → Export (API), a .json file), if the built-in TRELLIS.2 template doesn't work:</div>
@@ -2670,6 +2672,7 @@ function renderApps(apps) {
     if ($("artStop")) $("artStop").onclick = () => go("stop");
     if ($("artUpdate")) $("artUpdate").onclick = async () => { $("artUpdate").disabled = true; $("artUpdate").textContent = "Updating…"; const r = await go("update"); if (r.log) toast("ComfyUI updated."); };
     $("artUrlSave").onclick = () => go("settings", {url: $("artUrl").value, folder: null, workflow: null});
+    $("artDirSave").onclick = () => go("settings", {url: null, folder: $("artDir").value, workflow: null});
     $("artWfSave").onclick = () => go("settings", {url: null, folder: null, workflow: $("artWf").value});
   }
   $("gameAdd").onclick = async () => { const r = await api("/api/games/add", {}); if (r.error) alert(r.error); appsSig = ""; };
