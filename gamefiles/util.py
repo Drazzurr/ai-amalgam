@@ -192,10 +192,15 @@ def _lz4_with_history(chunk, history):
 def zstd(src, size=0):
     try:
         import zstandard
+        return zstandard.ZstdDecompressor().decompress(src, max_output_size=size or 512 * 1024 * 1024)
     except ImportError:
-        raise RuntimeError("This file uses Zstandard compression. Click 'Install helpers' (Apps card → Game files); "
-                           "it installs the zstandard library.")
-    return zstandard.ZstdDecompressor().decompress(src, max_output_size=size or 512 * 1024 * 1024)
+        pass
+    try:
+        from compression import zstd as _z      # built into Python 3.14 and newer
+        return _z.decompress(src)
+    except ImportError:
+        raise RuntimeError("This file uses Zstandard compression, which needs Python 3.14 or newer, or the zstandard "
+                           "library (Apps card → Game files → Install helpers).") from None
 
 
 def inflate(src, size=0):

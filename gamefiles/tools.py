@@ -95,11 +95,28 @@ def _install_release(repo, pattern, dest, say):
 def install(say=print):
     """Install everything the readers can use. Each part is optional; failures are reported, not fatal."""
     ok = True
-    say("Installing Python libraries (lz4, zstandard, python-lzo, py7zr)…")
+    say("Installing Python libraries (optional speed-ups)…")
+    why = {"lz4": "Amalgam reads LZ4 archives on its own; this only lets it compress archives it writes",
+           "zstandard": "Python 3.14 and newer read Zstandard on their own",
+           "python-lzo": "only for original ME1/ME2 packages, not the Legendary Edition",
+           "py7zr": "Amalgam uses 7-Zip's own tool for .7z files instead (next line)"}
     for pkg in ("lz4", "zstandard", "python-lzo", "py7zr"):
-        r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--quiet", pkg],
+        # ready-made builds only: building from source needs a C compiler most PCs don't have
+        r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--quiet", "--only-binary", ":all:", pkg],
                            capture_output=True, creationflags=NO_WINDOW)
-        say(f"  {pkg}: {'ok' if r.returncode == 0 else 'skipped (' + r.stderr.decode(errors='replace').strip()[-120:] + ')'}")
+        if r.returncode == 0:
+            say(f"  {pkg}: ok")
+        else:
+            say(f"  {pkg}: not available for Python {sys.version_info.major}.{sys.version_info.minor} yet. "
+                f"That's fine: {why[pkg]}.")
+    try:
+        say("7-Zip command-line tool (.7z mods and downloads):")
+        from forge import archives
+        exe = archives.ensure_7z(say)
+        say(f"  ready: {exe}")
+    except Exception as e:
+        ok = False
+        say(f"  couldn't install: {e}")
     for name, repo, pattern, folder in (
             ("LSLib (Baldur's Gate 3 .lsf/.gr2)", "Norbyte/lslib", r"^ExportTool.*\.zip$", "lslib"),
             ("WolvenKit CLI (Cyberpunk 2077)", "WolvenKit/WolvenKit", r"(console|cli).*\.zip$", "wolvenkit")):
@@ -126,6 +143,17 @@ def installed():
             libs[mod] = True
         except ImportError:
             libs[mod] = False
+    if not libs["zstandard"]:
+        try:
+            from compression import zstd  # noqa: F401  (built into Python 3.14+)
+            libs["zstandard"] = True
+        except ImportError:
+            pass
+    try:
+        from forge import archives
+        libs["sevenzip"] = bool(archives.seven_zip())
+    except Exception:
+        libs["sevenzip"] = False
     return {"lslib": exists("lslib", {"divine.exe"}),
             "wolvenkit": exists("wolvenkit", {"wolvenkit.cli.exe", "cp77tools.exe"}), **libs}
 

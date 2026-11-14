@@ -319,8 +319,11 @@ class Artisan:
                 arc = os.path.join(tools_dir(), asset["name"])
                 if not os.path.isfile(arc):
                     self._download(asset["browser_download_url"], arc, f"ComfyUI {rel.get('tag_name', '')}")
-                self._say("Unpacking ComfyUI (a few minutes)")
                 from forge import archives
+                if arc.lower().endswith(".7z"):
+                    self._say("Getting 7-Zip's tool to unpack it")
+                    archives.ensure_7z()
+                self._say("Unpacking ComfyUI (a few minutes)")
                 archives.extract(arc, tools_dir())
                 if not (self._python() and self._main()):
                     found = glob.glob(os.path.join(tools_dir(), "*", "ComfyUI", "main.py"))

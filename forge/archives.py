@@ -1,4 +1,6 @@
-"""Open mod archives: .zip with Python itself, .7z with py7zr (or 7-Zip), .rar with 7-Zip.
+"""Open mod archives: .zip with Python itself; .7z with 7-Zip (the installed one, or 7-Zip's small official
+command-line tool 7zr.exe that Amalgam fetches into its tools folder) or py7zr; .rar with 7-Zip or the tar tool
+built into Windows 10/11.
 
 Only reads and extracts into Amalgam's own working folders; never runs anything from inside an archive.
 """
@@ -11,13 +13,56 @@ import zipfile
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
-def seven_zip():
-    """7-Zip's command-line program, if installed (it handles every archive type)."""
+SEVENZR_URL = "https://www.7-zip.org/a/7zr.exe"
+
+
+def _tools():
+    return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "AIAmalgam", "tools", "7zip")
+
+
+def seven_zip(full_only=False):
+    """7-Zip's command-line program: the installed 7-Zip (every archive type) or Amalgam's 7zr.exe (.7z only)."""
     for p in (shutil.which("7z"), shutil.which("7za"),
               *(os.path.join(os.environ.get(v) or "", "7-Zip", "7z.exe") for v in ("ProgramFiles", "ProgramFiles(x86)"))):
         if p and os.path.isfile(p):
             return p
+    if not full_only:
+        p = os.path.join(_tools(), "7zr.exe")
+        if os.path.isfile(p):
+            return p
     return None
+
+
+def ensure_7z(say=None):
+    """Make sure .7z files can be opened: use 7-Zip if installed, else fetch 7-Zip's official 7zr.exe (~600 KB)."""
+    have = seven_zip()
+    if have:
+        return have
+    try:
+        import py7zr  # noqa: F401
+        return "py7zr"
+    except ImportError:
+        pass
+    if os.name != "nt":
+        raise ArchiveError("Install 7-Zip (p7zip) to open .7z files.")
+    import urllib.request
+    if say:
+        say("  downloading 7-Zip's command-line tool (7zr.exe) from 7-zip.org…")
+    os.makedirs(_tools(), exist_ok=True)
+    dest = os.path.join(_tools(), "7zr.exe")
+    with urllib.request.urlopen(urllib.request.Request(SEVENZR_URL, headers={"User-Agent": "AI-Amalgam"}), timeout=120) as r:
+        data = r.read()
+    if not data.startswith(b"MZ") or len(data) < 100_000:
+        raise ArchiveError("The 7-Zip download didn't look right. Install 7-Zip from 7-zip.org instead (free).")
+    with open(dest + ".part", "wb") as f:
+        f.write(data)
+    os.replace(dest + ".part", dest)
+    return dest
+
+
+def _windows_tar():
+    p = os.path.join(os.environ.get("SystemRoot") or r"C:\Windows", "System32", "tar.exe")
+    return p if os.path.isfile(p) else shutil.which("bsdtar")
 
 
 def kind(path):
@@ -57,8 +102,18 @@ def names(path):
                 return [i.filename.replace("\\", "/") for i in z.list() if not i.is_directory]
         except ImportError:
             pass
-    exe = seven_zip()
-    if not exe:
+    exe = seven_zip(full_only=k != "7z")
+    if not exe and k == "7z":
+        try:
+            exe = ensure_7z()
+        except Exception:
+            exe = None
+    if not exe and k != "7z" and _windows_tar():
+        r = subprocess.run([_windows_tar(), "-tf", path], capture_output=True, creationflags=NO_WINDOW)
+        if r.returncode == 0:
+            return [ln.strip().replace("\\", "/") for ln in r.stdout.decode("utf-8", "replace").splitlines()
+                    if ln.strip() and not ln.strip().endswith(("/", "\\"))]
+    if not exe or exe == "py7zr":
         raise ArchiveError(f"{os.path.basename(path)} is a .{k} archive. Install 7-Zip (free, 7-zip.org) so Amalgam can open it"
                            + (", or press Install helpers in Apps → Game files." if k == "7z" else "."))
     r = subprocess.run([exe, "l", "-slt", "-ba", path], capture_output=True, creationflags=NO_WINDOW)
@@ -127,8 +182,19 @@ def extract(path, dest, only=None):
             return
         except ImportError:
             pass
-    exe = seven_zip()
-    if not exe:
+    exe = seven_zip(full_only=k != "7z")
+    if not exe and k == "7z":
+        try:
+            exe = ensure_7z()
+        except Exception:
+            exe = None
+    if (not exe or exe == "py7zr") and k != "7z" and _windows_tar():
+        r = subprocess.run([_windows_tar(), "-xf", path, "-C", dest] + (list(only) if only else []),
+                           capture_output=True, creationflags=NO_WINDOW)
+        if r.returncode == 0:
+            _check_inside(dest)
+            return
+    if not exe or exe == "py7zr":
         raise ArchiveError(f"{os.path.basename(path)} is a .{k} archive. Install 7-Zip (free, 7-zip.org) so Amalgam can open it.")
     args = [exe, "x", "-y", f"-o{dest}", path] + (list(only) if only else [])
     r = subprocess.run(args, capture_output=True, creationflags=NO_WINDOW)
