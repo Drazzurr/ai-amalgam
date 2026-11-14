@@ -89,6 +89,13 @@ class Store:
                 status TEXT NOT NULL DEFAULT 'queued', chat_id INTEGER, position REAL NOT NULL,
                 created REAL NOT NULL, started REAL NOT NULL DEFAULT 0, finished REAL NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '')""")
+        # Mod Forge: modpacks and our own mods (PC only; never synced: they point at big local folders)
+        self._db.execute("""
+            CREATE TABLE IF NOT EXISTS forge_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, game TEXT NOT NULL, name TEXT NOT NULL,
+                project_id INTEGER, folder TEXT NOT NULL DEFAULT '', plan TEXT NOT NULL DEFAULT '[]',
+                state TEXT NOT NULL DEFAULT '{}', approved INTEGER NOT NULL DEFAULT 0,
+                created REAL NOT NULL, updated REAL NOT NULL)""")
         self._migrate_sync()
         self._setup_search()
         self._db.commit()
@@ -428,6 +435,59 @@ class Store:
                                    (text, project_id, top + 1, now))
             self._db.commit()
             return cur.lastrowid
+
+    # ----- Mod Forge -----
+
+    FORGE_COLS = ("id", "kind", "game", "name", "project_id", "folder", "plan", "state", "approved", "created", "updated")
+
+    def _forge_row(self, r):
+        d = dict(zip(self.FORGE_COLS, r))
+        for k, empty in (("plan", []), ("state", {})):
+            try:
+                d[k] = json.loads(d[k] or "null") or empty
+            except ValueError:
+                d[k] = empty
+        d["approved"] = bool(d["approved"])
+        return d
+
+    def forge_add(self, kind, game, name, project_id, folder):
+        now = time.time()
+        with self._lock:
+            cur = self._db.execute("INSERT INTO forge_items (kind, game, name, project_id, folder, created, updated) "
+                                   "VALUES (?, ?, ?, ?, ?, ?, ?)", (kind, game, name, project_id, folder, now, now))
+            self._db.commit()
+            return cur.lastrowid
+
+    def forge_items(self, kind=None):
+        with self._lock:
+            q = f"SELECT {', '.join(self.FORGE_COLS)} FROM forge_items" + (" WHERE kind = ?" if kind else "") + " ORDER BY updated DESC"
+            rows = self._db.execute(q, (kind,) if kind else ()).fetchall()
+        return [self._forge_row(r) for r in rows]
+
+    def forge_item(self, item_id=None, project_id=None):
+        with self._lock:
+            if item_id is not None:
+                row = self._db.execute(f"SELECT {', '.join(self.FORGE_COLS)} FROM forge_items WHERE id = ?", (item_id,)).fetchone()
+            else:
+                row = self._db.execute(f"SELECT {', '.join(self.FORGE_COLS)} FROM forge_items WHERE project_id = ?",
+                                       (project_id,)).fetchone()
+        return self._forge_row(row) if row else None
+
+    def forge_update(self, item_id, **fields):
+        fields = {k: (json.dumps(v) if k in ("plan", "state") else int(v) if k == "approved" else v)
+                  for k, v in fields.items() if k in self.FORGE_COLS and k not in ("id", "created")}
+        if not fields:
+            return
+        fields["updated"] = time.time()
+        with self._lock:
+            self._db.execute(f"UPDATE forge_items SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?",
+                             (*fields.values(), item_id))
+            self._db.commit()
+
+    def forge_delete(self, item_id):
+        with self._lock:
+            self._db.execute("DELETE FROM forge_items WHERE id = ?", (item_id,))
+            self._db.commit()
 
     def jobs(self):
         with self._lock:

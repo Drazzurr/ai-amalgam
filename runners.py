@@ -927,7 +927,18 @@ class DemoRunner(Runner):
             "Here is my take:\n- break the goal into **small steps**\n- test each one\n  - then check the doc\n\n"
             "| Step | Owner |\n|---|---|\n| Plan | Claude |\n| Review | GPT |\n\n```python\nprint('hi')\n```",
         ]
-        if self.code_dir and self.key == "claude" and "[Command result" not in prompt:
+        forge_pack = "=== MOD FORGE: MODPACK BUILDER ===" in prompt
+        if forge_pack and "I've installed this modpack" in prompt and "LOOT (stand-in)" not in prompt and self.key == "claude":
+            lines = [f"({self.name}, demo) Sorting the load order with LOOT.",
+                     'RUN: "/tmp/fakeloot/LOOT.exe" --game="Skyrim Special Edition" --auto-sort', "NEXT"]
+        elif forge_pack and "LOOT (stand-in)" in prompt:
+            lines = [f"({self.name}, demo) LOOT sorted it. You're all set.", "DONE"]
+        elif forge_pack and "$ forge" not in prompt and self.key == "claude":
+            lines = [f"({self.name}, demo) Let me look on Nexus and start the plan.", "NEXUS: search armor",
+                     "PLAN: add 500 | bug fixes", "PLAN: add 200 | armors", "PLAN: add 300 | the armor", "PLAN: choose 300 3BA", "NEXT"]
+        elif forge_pack:
+            lines = [f"({self.name}, demo) The plan looks good. Press Approve plan & build in the Mod Forge.", "DONE"]
+        elif self.code_dir and self.key == "claude" and "[Command result" not in prompt:
             with open(os.path.join(self.code_dir, "hello.py"), "w", encoding="utf-8") as f:
                 f.write('print("Hello from AI Amalgam")\n')
             lines = [f"({self.name}, demo) I created hello.py. Let's run it to check.",

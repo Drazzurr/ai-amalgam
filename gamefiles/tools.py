@@ -95,8 +95,8 @@ def _install_release(repo, pattern, dest, say):
 def install(say=print):
     """Install everything the readers can use. Each part is optional; failures are reported, not fatal."""
     ok = True
-    say("Installing Python libraries (lz4, zstandard, python-lzo)…")
-    for pkg in ("lz4", "zstandard", "python-lzo"):
+    say("Installing Python libraries (lz4, zstandard, python-lzo, py7zr)…")
+    for pkg in ("lz4", "zstandard", "python-lzo", "py7zr"):
         r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--quiet", pkg],
                            capture_output=True, creationflags=NO_WINDOW)
         say(f"  {pkg}: {'ok' if r.returncode == 0 else 'skipped (' + r.stderr.decode(errors='replace').strip()[-120:] + ')'}")

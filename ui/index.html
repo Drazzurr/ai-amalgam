@@ -71,6 +71,47 @@
   .qjob .qa button { font-size: 12px; padding: 3px 8px; }
   .qstat { color: var(--quiet); font-size: 13px; }
   /* mod packaging */
+  /* Mod Forge */
+  .fgtabs { display: flex; gap: 2px; background: var(--side); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+  .fgtabs button { padding: 5px 12px; border-radius: 7px; color: var(--quiet); font-size: 13.5px; font-weight: 550; }
+  .fgtabs button.on { background: var(--raised2); color: var(--ink); }
+  .fgacct { font-size: 12.5px; color: var(--quiet); cursor: pointer; padding: 4px 9px; border-radius: 8px; background: var(--raised); }
+  .fgacct.ok { color: #6fd3a8; } .fgacct.bad { color: #f0a35e; }
+  .fgwrap { display: grid; grid-template-columns: 260px 1fr; gap: 16px; } .fgwrap > * { min-width: 0; }
+  #fgDetail code { word-break: break-all; } .fgtable { overflow-x: auto; }
+  .fglist .fgi { padding: 9px 10px; border-radius: 10px; cursor: pointer; margin-bottom: 4px; background: var(--raised); }
+  .fglist .fgi:hover { background: var(--raised2); } .fglist .fgi.on { outline: 1.5px solid #6c8cff; }
+  .fglist .fgi b { display: block; font-size: 14px; } .fglist .fgi small { color: var(--quiet); }
+  .fglist .fggame { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--quiet); margin: 12px 2px 6px; }
+  .fgnew { display: grid; gap: 6px; margin-bottom: 10px; } .fgnew .row, #fgSetup .row { display: flex; gap: 6px; align-items: center; }
+  .fgsteps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 14px; }
+  .fgstep { background: var(--raised); border-radius: 10px; padding: 10px; font-size: 13px; }
+  .fgstep .n { font-size: 11.5px; color: var(--quiet); text-transform: uppercase; letter-spacing: .05em; }
+  .fgstep.done { box-shadow: inset 3px 0 0 #3fbf8a; } .fgstep.cur { box-shadow: inset 3px 0 0 #6c8cff; }
+  .fgstep .btn { margin-top: 8px; }
+  .fgplan { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .fgplan td, .fgplan th { padding: 7px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .fgplan th { color: var(--quiet); font-weight: 550; font-size: 12px; }
+  .fgplan small { color: var(--quiet); display: block; } .fgplan a { color: #8fb0ff; text-decoration: none; } .fgplan a:hover { text-decoration: underline; }
+  #fgDetail .sec { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--quiet); margin: 16px 0 6px; font-weight: 600; }
+  .fgplan .btn { padding: 3px 8px; }
+  .fgs { font-size: 12px; padding: 2px 7px; border-radius: 6px; background: var(--raised2); white-space: nowrap; }
+  .fgs.ready { color: #6fd3a8; } .fgs.needs_you { color: #f0c35e; } .fgs.error { color: #f07a6a; }
+  .fgprob li { color: #f0a35e; margin-bottom: 3px; }
+  .fgbar { height: 6px; background: var(--raised2); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .fgbar i { display: block; height: 100%; background: #6c8cff; }
+  .fmstep { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+  .fmstep.hidden { opacity: .5; } .fmstep h4 { margin: 0 0 6px; font-size: 14.5px; }
+  .fmgroup { margin: 8px 0 4px; } .fmgroup .gh { font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
+  .fmgroup.needs { background: rgba(240,195,94,.08); border-radius: 8px; padding: 6px; }
+  .fmopt { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 6px; border-radius: 8px; cursor: pointer; }
+  .fmopt:hover { background: var(--raised); } .fmopt.off { opacity: .45; cursor: default; }
+  .fmopt small { color: var(--quiet); display: block; white-space: pre-wrap; }
+  .fmopt img { width: 92px; height: 60px; object-fit: cover; border-radius: 6px; }
+  .fmt { font-size: 11px; padding: 1px 6px; border-radius: 5px; background: var(--raised2); color: var(--quiet); margin-left: 4px; }
+  .fmt.Required { color: #6fd3a8; } .fmt.Recommended { color: #8fb0ff; } .fmt.NotUsable { color: #f07a6a; }
+  @media (max-width: 760px) { .fgwrap { grid-template-columns: 1fr; } .fgsteps { grid-template-columns: 1fr 1fr; } .fgnew .row { flex-wrap: wrap; } .fgnew select { min-width: 0; } }
+  @media (max-width: 480px) { .fgsteps { grid-template-columns: 1fr; } }
   .modform { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; margin-bottom: 12px; }
   .modform label { display: grid; gap: 3px; font-size: 12.5px; color: var(--quiet); }
   .modform label.chk { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 13.5px; }
@@ -595,6 +636,8 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>Gallery</button>
     <button id="queueBtn" title="Jobs Amalgam works through while you're away">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>Job queue<span class="qcount" id="queueCount"></span></button></div>
+  <div class="sidebtns" id="forgeRow"><button id="forgeBtn" title="Build modpacks from Nexus Mods and make your own mods (PC)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 17h12l-1.5-5h-9zM9 12V7l3-3 3 3v5"/></svg>Mod Forge<span class="qcount" id="forgeCount"></span></button></div>
   <div class="chatlist">
     <div id="results" style="display:none"></div>
     <div id="lists">
@@ -685,6 +728,30 @@
     <div id="qList"></div>
   </div>
   <div class="pfoot show"><span class="qstat" id="qFoot"></span><span class="sp"></span><button class="btn" id="qClear">Clear finished</button></div>
+</div></div>
+<div class="panel" id="forgePanel"><div class="pbox">
+  <div class="phead"><h2>Mod Forge</h2>
+    <div class="fgtabs" id="fgTabs"><button class="on" data-fk="pack">Modpack Builder</button><button data-fk="mod">Mod Workshop</button></div>
+    <span class="sp"></span><span class="fgacct" id="fgAcct" title="Your Nexus Mods connection and the Mod Forge folder">Nexus: not connected</span>
+    <button class="btn" id="fgClose">Close</button></div>
+  <div class="pbody">
+    <div id="fgSetup" style="display:none" class="qadd">
+      <b>Nexus Mods account</b>
+      <p class="plain" style="margin:4px 0 8px">Paste your <b>personal API key</b> from <a href="#" id="fgKeyLink">nexusmods.com → Site preferences → API Keys</a> (at the bottom, "Personal API Key"). It's kept only on this PC and only sent to Nexus Mods. Downloads need Premium.</p>
+      <div class="row"><input class="field" id="fgKey" type="password" placeholder="Personal API key" autocomplete="off" spellcheck="false" style="flex:1">
+        <button class="btn go" id="fgKeySave">Connect</button><button class="btn" id="fgKeyClear">Disconnect</button></div>
+      <b style="display:block;margin-top:12px">Mod Forge folder</b>
+      <p class="plain" style="margin:4px 0 8px">Each game gets a folder here, with one folder per modpack and a "My Mods" folder for your own mods.</p>
+      <div class="row"><input class="field" id="fgRoot" spellcheck="false" style="flex:1"><button class="btn" id="fgRootSave">Save</button></div>
+      <p class="plain" id="fgSetupMsg"></p>
+    </div>
+    <div class="fgwrap">
+      <div class="fglist"><div class="fgnew"><input class="field" id="fgNewName" placeholder="New modpack name" maxlength="70">
+        <div class="row"><select class="field" id="fgNewGame" style="flex:1"></select><button class="btn go" id="fgNewBtn">Create</button></div></div>
+        <div id="fgItems"></div></div>
+      <div id="fgDetail"><div class="gempty">Pick a modpack on the left, or create one.</div></div>
+    </div>
+  </div>
 </div></div>
 <div class="panel" id="modPanel"><div class="pbox">
   <div class="phead"><h2>Package mod</h2><span class="qstat" id="modGameLbl"></span><span class="sp"></span><button class="btn" id="modClose">Close</button></div>
@@ -1449,6 +1516,7 @@ async function poll() {
     if (s.shortcuts) shortcutList = s.shortcuts;     // before messages are drawn (their /shortcut chips)
     if (!lite && s.phone !== undefined && s.phone !== PHONE) { PHONE = s.phone; store("amalgam_phone", PHONE ? "1" : "0"); }
     if (PHONE && $("search").placeholder.includes("Ctrl")) $("search").placeholder = "Search chats";
+    if (!lite) $("forgeRow").style.display = PHONE ? "none" : "";      // the Mod Forge is a PC feature
     if (lastSyncRev !== null && s.sync_rev !== lastSyncRev) chatId = undefined;   // changes arrived from the other device
     lastSyncRev = s.sync_rev;
     announceBackground(s);
@@ -1711,6 +1779,202 @@ function renderQueueBadge(q) {
   $("queueCount").classList.toggle("show", !!n);
   $("queueCount").title = `${q.open} to do` + (q.needs_you ? `, ${q.needs_you} need you` : "");
 }
+
+// ---------- Mod Forge (PC) ----------
+let fgKind = "pack", fgData = null, fgSel = {pack: null, mod: null}, fgItem = null, fgTimer = null, fgFm = null, fgFmChoices = {};
+const fgStage = {planning: "Planning", built: "Built", problems: "Built, with problems", needs_you: "Needs your choices", error: "Build failed", stopped: "Stopped"};
+const fgStatus = {planned: "In the plan", downloaded: "Downloaded", ready: "Ready", needs_you: "Pick options", chosen: "Options picked", error: "Problem"};
+async function openForge() {
+  $("forgePanel").classList.add("show"); closeDrawer();
+  await loadForge();
+  clearInterval(fgTimer);
+  fgTimer = setInterval(() => { if ($("forgePanel").classList.contains("show")) loadForge(true); else clearInterval(fgTimer); }, 2500);
+}
+async function loadForge(quiet) {
+  const d = await api("/api/forge");
+  if (d.error) { $("fgDetail").innerHTML = `<div class="gempty">${esc(d.error)}</div>`; return; }
+  fgData = d;
+  const a = d.account;
+  $("fgAcct").textContent = a.connected ? `Nexus: ${a.name || "connected"}${a.premium ? " · Premium" : " · not Premium"}` : "Nexus: not connected";
+  $("fgAcct").className = "fgacct " + (a.connected ? (a.premium ? "ok" : "bad") : "bad");
+  if (!a.connected && !quiet) $("fgSetup").style.display = "";
+  if (document.activeElement !== $("fgRoot")) $("fgRoot").value = d.root;
+  if (!$("fgNewGame").options.length) $("fgNewGame").innerHTML = d.games.map(g => `<option value="${esc(g.id)}">${esc(g.label)}</option>`).join("");
+  drawForgeList();
+  const id = fgSel[fgKind];
+  if (id && d.items.some(i => i.id === id)) await loadForgeItem(id, quiet);
+  else { fgItem = null; $("fgDetail").innerHTML = `<div class="gempty">${fgKind === "pack" ? "Pick a modpack on the left, or create one. Claude and GPT will ask what you want, find the mods on Nexus and build a plan with you." : "Pick one of your mods on the left, or create a new one. Each mod gets its own folder (laid out like the game's Data folder) and its own chat, where Claude and GPT build it with you."}</div>`; }
+  renderForgeBadge(d.items);
+}
+function renderForgeBadge(items) {
+  const n = (items || []).filter(i => i.needs_you || i.stage === "needs_you").length;
+  $("forgeCount").textContent = n ? `${n}!` : ""; $("forgeCount").classList.toggle("show", !!n);
+}
+function drawForgeList() {
+  const items = fgData.items.filter(i => i.kind === fgKind);
+  $("fgNewName").placeholder = fgKind === "pack" ? "New modpack name" : "New mod name";
+  const games = [...new Set(items.map(i => i.game))];
+  $("fgItems").innerHTML = items.length ? games.map(g => `<div class="fggame">${esc(g)}</div>` + items.filter(i => i.game === g).map(i =>
+    `<div class="fgi${fgSel[fgKind] === i.id ? " on" : ""}" data-fi="${i.id}"><b>${esc(i.name)}</b><small>${i.kind === "pack"
+      ? `${i.count} mod${i.count === 1 ? "" : "s"} · ${i.running ? "Building…" : fgStage[i.stage] || esc(i.stage)}${i.approved ? " · approved" : ""}`
+      : "Your mod"}</small></div>`).join("")).join("")
+    : `<div class="gempty" style="padding:16px 4px">${fgKind === "pack" ? "No modpacks yet." : "No mods yet."}</div>`;
+  $("fgItems").querySelectorAll("[data-fi]").forEach(el => el.onclick = () => { fgSel[fgKind] = +el.dataset.fi; fgFm = null; drawForgeList(); loadForgeItem(+el.dataset.fi); });
+}
+async function loadForgeItem(id, quiet) {
+  const it = await api("/api/forge/item?id=" + id);
+  if (it.error) return;
+  if (quiet && fgItem && fgItem.id === id && JSON.stringify(it) === JSON.stringify(fgItem)) return;
+  fgItem = it;
+  if (fgFm && document.querySelector("#fgDetail .fmstep")) return;    // don't redraw over the installer you're filling in
+  drawForgeItem();
+}
+function fgAction(label, cls, act, extra = "") { return `<button class="btn ${cls}" data-fa="${act}" ${extra}>${label}</button>`; }
+function drawForgeItem() {
+  const it = fgItem; if (!it) return;
+  const folder = `<div class="plain" style="margin-top:2px"><code>${esc(it.folder)}</code>${PHONE ? "" : ` ${fgAction("Show folder", "", "reveal")}`}${it.exists ? "" : " <b style='color:#f0a35e'>(folder missing)</b>"}</div>`;
+  if (it.kind === "mod") {
+    $("fgDetail").innerHTML = `<h3 style="margin:0">${esc(it.name)}</h3>${folder}
+      <p class="plain">Your own ${esc(it.game)} mod. The folder is the mod itself, laid out like the game's Data folder; work files go in Source. Claude and GPT can read the game's files to match its records, meshes and scripts, edit the mod's files, and run tools you approve.</p>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">${fgAction("Open its chat", "go", "chat")}${fgAction("Open the files (Code tab)", "", "code")}${fgAction("📦 Package mod", "", "package")}${fgAction("Remove from the Mod Forge", "", "remove")}</div>`;
+    return wireForge();
+  }
+  const live = it.live || {}, running = !!live.running;
+  const mods = it.mods, need = mods.filter(m => m.status === "needs_you");
+  const built = !!it.built_at;
+  const step = !mods.length ? 1 : !it.approved ? 2 : running || !built || need.length ? 3 : 4;
+  const pct = live.size ? Math.round(100 * live.bytes / live.size) : 0;
+  const steps = [
+    ["1 · Plan it", `Tell Claude and GPT what you want; they search Nexus, ask what matters, and build the plan.`, fgAction("Open the chat", step === 1 ? "go" : "", "chat")],
+    ["2 · Approve", it.approved ? "Plan approved. LOOT and xEdit can run without asking for this pack." : mods.length ? "Look over the plan below, then approve it once." : "Waiting for a plan.",
+      mods.length && !it.approved ? fgAction("Approve plan & build", "go", "approve") : it.approved ? fgAction("Undo approval", "", "unapprove") : ""],
+    ["3 · Build", running ? `${esc({downloading: "Downloading", checking: "Checking", packing: "Installing"}[live.stage] || "Working")} ${esc(live.detail || "")} (${(live.done || 0) + 1}/${live.total || mods.length})<div class="fgbar"><i style="width:${live.stage === "downloading" ? pct : Math.round(100 * (live.done || 0) / Math.max(1, live.total || 1))}%"></i></div>`
+      : need.length ? `${need.length} installer${need.length === 1 ? " needs" : "s need"} your choices.` : built ? `Built ${new Date(it.built_at * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"})}.` : "Downloads every file and runs the installers.",
+      running ? fgAction("Stop", "", "stop") : it.approved ? fgAction(built ? "Build again" : "Build", step === 3 ? "go" : "", "build") : ""],
+    ["4 · Install & finish", "Install the numbered files in Vortex or Mod Organizer 2, then let the models check, sort (LOOT) and clean (xEdit).",
+      built && !need.length ? fgAction("I've installed it", step === 4 ? "go" : "", "installed") : ""]];
+  let h = `<h3 style="margin:0">${esc(it.name)}</h3>${folder}
+    <div class="fgsteps">${steps.map((s, i) => `<div class="fgstep ${i + 1 < step ? "done" : i + 1 === step ? "cur" : ""}"><div class="n">${s[0]}</div>${s[1]}<div>${s[2]}</div></div>`).join("")}</div>`;
+  if (it.error && !running) h += `<p style="color:#f07a6a">${esc(it.error)}</p>`;
+  if (it.problems.length) h += `<div class="sec">Problems from the last build</div><ul class="fgprob">${it.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>${fgAction("Ask Claude and GPT to fix these", "go", "fix")}`;
+  h += `<div class="sec">Plan · install order (${mods.length})</div>`;
+  h += mods.length ? `<div class="fgtable"><table class="fgplan"><tr><th>#</th><th>Mod</th><th>File</th><th>Status</th><th></th></tr>${mods.map((m, i) => `<tr>
+      <td>${i + 1}</td><td><a href="#" data-url="${esc(m.url)}">${esc(m.name)}</a>${m.why ? `<small>${esc(m.why)}</small>` : ""}${m.hints.length ? `<small>Installer: ${esc(m.hints.join("; "))}</small>` : ""}</td>
+      <td>${esc(m.file_name || "main file")}${m.version ? `<small>v${esc(m.version)}</small>` : ""}</td>
+      <td><span class="fgs ${m.status}">${fgStatus[m.status] || esc(m.status)}</span>${m.error ? `<small style="color:#f07a6a">${esc(m.error)}</small>` : ""}${m.out ? `<small>${esc(m.out)}</small>` : ""}</td>
+      <td style="white-space:nowrap">${m.fomod && m.status !== "planned" && m.status !== "error" ? fgAction(m.status === "needs_you" ? "Pick options" : "Options", m.status === "needs_you" ? "go" : "", "fomod", `data-mid="${m.mod_id}"`) : ""}
+        ${running ? "" : fgAction("↑", "", "up", `data-i="${i}" title="Install earlier"`) + fgAction("↓", "", "down", `data-i="${i}" title="Install later"`) + fgAction("✕", "", "drop", `data-i="${i}" title="Take out of the plan"`)}</td></tr>`).join("")}</table></div>`
+    : `<div class="gempty">The plan is empty. Open the chat and tell Claude and GPT what kind of game you want.</div>`;
+  if (it.load_order.length) h += `<div class="sec">Load order (${it.load_order.length} plugins)</div><p class="plain">${it.load_order.map(esc).join(" · ")}</p>`;
+  h += `<div id="fgFm"></div><div style="margin-top:14px">${fgAction("Remove from the Mod Forge", "", "remove")}</div>`;
+  $("fgDetail").innerHTML = h;
+  wireForge();
+}
+async function fgOpenChat(text) {
+  $("forgePanel").classList.remove("show");
+  await api("/api/forge/open", {id: fgItem.id});
+  if (text) await api("/api/send", {text});
+}
+function wireForge() {
+  const it = fgItem;
+  $("fgDetail").querySelectorAll("[data-url]").forEach(a => a.onclick = e => { e.preventDefault(); api("/api/open-url", {url: a.dataset.url}); });
+  $("fgDetail").querySelectorAll("[data-fa]").forEach(b => b.onclick = async () => {
+    const a = b.dataset.fa;
+    const order = it.mods ? it.mods.map(m => m.mod_id) : [];
+    let r = null;
+    if (a === "chat") return fgOpenChat();
+    if (a === "code") { await fgOpenChat(); return setView("code"); }
+    if (a === "package") { await fgOpenChat(); setView("code"); return $("modBtn").click(); }
+    if (a === "reveal") return api("/api/reveal", {path: it.folder, folder: true});
+    if (a === "fix") return fgOpenChat("The last build of this modpack reported problems (they're in the build report above). Please fix them with PLAN lines, and tell me if you need me to decide anything.");
+    if (a === "installed") return fgOpenChat("I've installed this modpack in my mod manager. Please check the setup (MODS: check), sort the load order with LOOT, clean any plugins that need it with xEdit, and tell me if anything else needs fixing.");
+    if (a === "approve") { r = await api("/api/forge/approve", {id: it.id, ok: true}); if (!r.error) r = await api("/api/forge/build", {id: it.id}); }
+    else if (a === "unapprove") r = await api("/api/forge/approve", {id: it.id, ok: false});
+    else if (a === "build") r = await api("/api/forge/build", {id: it.id});
+    else if (a === "stop") r = await api("/api/forge/stop", {id: it.id});
+    else if (a === "up" || a === "down" || a === "drop") {
+      const i = +b.dataset.i;
+      if (a === "drop") { if (!confirm(`Take ${it.mods[i].name} out of the plan?`)) return; order.splice(i, 1); }
+      else { const j = a === "up" ? i - 1 : i + 1; if (j < 0 || j >= order.length) return; [order[i], order[j]] = [order[j], order[i]]; }
+      r = await api("/api/forge/plan", {id: it.id, order});
+    } else if (a === "remove") {
+      if (!confirm(`Remove “${it.name}” from the Mod Forge? Its folder and chat stay where they are.`)) return;
+      r = await api("/api/forge/remove", {id: it.id}); fgSel[fgKind] = null; fgItem = null;
+    } else if (a === "fomod") return fgOpenFomod(+b.dataset.mid);
+    if (r && r.error) alert(r.error);
+    fgFm = null; loadForge();
+  });
+}
+async function fgOpenFomod(mid, choices) {
+  const r = await api("/api/forge/fomod", {id: fgItem.id, mod_id: mid, choices});
+  if (r.error) return alert(r.error);
+  fgFm = r.view;
+  if (choices === undefined) {     // start from what's selected now (auto-filled, suggested or saved)
+    fgFmChoices = {};
+    for (const s of fgFm.steps) for (const g of s.groups) fgFmChoices[g.key] = g.options.filter(o => o.selected).map(o => o.name);
+  }
+  drawFomod();
+}
+function drawFomod() {
+  const v = fgFm, box = $("fgFm"); if (!box) return;
+  const img = o => o.image_path ? `<img src="/api/img?t=${encodeURIComponent(token)}&path=${encodeURIComponent(o.image_path)}" alt="" onerror="this.replaceWith(document.createElement('span'))">` : "<span></span>";
+  const typeWord = {Required: "required", Recommended: "recommended", NotUsable: "not usable", CouldBeUsable: "might work"};
+  box.innerHTML = `<div class="sec">Installer · ${esc(v.mod_name)}</div>
+    <p class="plain">${v.needs_you ? `<b style="color:#f0c35e">${v.needs_you} choice${v.needs_you === 1 ? "" : "s"} need you</b> (highlighted). ` : "Everything is filled in. "}Options are filled in from earlier choices, the other mods in this pack, and what Claude and GPT suggested; change anything you like. Later steps update as you choose.</p>
+    ${v.steps.map(s => `<div class="fmstep ${s.visible ? "" : "hidden"}"><h4>${esc(s.name)}${s.visible ? "" : ` <span class="fmt">skipped${s.condition ? ": needs " + esc(s.condition) : ""}</span>`}</h4>
+      ${s.groups.map(g => {
+        const one = /exactlyone|atmostone/i.test(g.type);
+        return `<div class="fmgroup ${g.needs_you ? "needs" : ""}"><div class="gh">${esc(g.name)} <span class="fmt">${one ? "pick one" : /atleastone/i.test(g.type) ? "pick at least one" : /selectall/i.test(g.type) ? "all included" : "pick any"}</span>${g.source === "suggested" ? '<span class="fmt">suggested by the models</span>' : ""}</div>
+        ${g.options.map(o => `<label class="fmopt ${o.type === "NotUsable" || (o.locked && !s.visible) ? "off" : ""}">
+          <input type="${one ? "radio" : "checkbox"}" name="fm-${esc(g.key)}" data-gk="${esc(g.key)}" data-on="${esc(o.name)}" ${o.selected ? "checked" : ""} ${o.locked || !s.visible ? "disabled" : ""}>
+          <span><b>${esc(o.name)}</b>${typeWord[o.type] ? `<span class="fmt ${o.type}">${typeWord[o.type]}</span>` : ""}${o.why ? `<small>because ${esc(o.why)}</small>` : ""}${o.desc ? `<small>${esc(o.desc)}</small>` : ""}</span>${img(o)}</label>`).join("")}</div>`;
+      }).join("")}</div>`).join("")}
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">${fgAction("Use these choices", "go", "fmdone")}${fgAction("Save for later", "", "fmsave")}${fgAction("Close", "", "fmclose")}</div>`;
+  box.querySelectorAll("input[data-gk]").forEach(inp => inp.onchange = () => {
+    const k = inp.dataset.gk;
+    fgFmChoices[k] = [...box.querySelectorAll(`input[data-gk="${CSS.escape(k)}"]`)].filter(x => x.checked).map(x => x.dataset.on);
+    fgOpenFomod(v.mod_id, fgFmChoices);      // later steps and options follow from this choice
+  });
+  box.querySelectorAll("[data-fa]").forEach(b => b.onclick = async () => {
+    const a = b.dataset.fa;
+    if (a === "fmclose") { fgFm = null; return drawForgeItem(); }
+    const r = await api("/api/forge/fomod", {id: fgItem.id, mod_id: v.mod_id, choices: fgFmChoices, save: true, done: a === "fmdone"});
+    if (r.error) return alert(r.error);
+    fgFm = null;
+    if (a === "fmdone" && !fgItem.mods.some(m => m.status === "needs_you" && m.mod_id !== v.mod_id)) await api("/api/forge/build", {id: fgItem.id});
+    loadForge();
+  });
+  box.scrollIntoView({behavior: "smooth", block: "start"});
+}
+$("forgeBtn").onclick = openForge;
+$("fgClose").onclick = () => $("forgePanel").classList.remove("show");
+$("fgTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
+  fgKind = b.dataset.fk; fgFm = null;
+  $("fgTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  loadForge();
+});
+$("fgAcct").onclick = () => { $("fgSetup").style.display = $("fgSetup").style.display ? "" : "none"; };
+$("fgKeyLink").onclick = e => { e.preventDefault(); api("/api/open-url", {url: "https://next.nexusmods.com/settings/api-keys"}); };
+$("fgKeySave").onclick = async () => {
+  $("fgSetupMsg").textContent = "Checking the key with Nexus…";
+  const r = await api("/api/forge/key", {key: $("fgKey").value});
+  $("fgSetupMsg").textContent = r.error ? r.error : `Connected as ${r.account.name}${r.account.premium ? " (Premium)." : ". This account isn't Premium, so downloads won't work."}`;
+  if (!r.error) { $("fgKey").value = ""; loadForge(true); }
+};
+$("fgKeyClear").onclick = async () => { await api("/api/forge/key", {key: ""}); $("fgSetupMsg").textContent = "Disconnected."; loadForge(true); };
+$("fgRootSave").onclick = async () => {
+  const r = await api("/api/forge/root", {path: $("fgRoot").value});
+  $("fgSetupMsg").textContent = r.error || "Saved. New modpacks and mods go there.";
+};
+$("fgNewBtn").onclick = async () => {
+  const name = $("fgNewName").value.trim();
+  if (!name) return $("fgNewName").focus();
+  const r = await api("/api/forge/new", {kind: fgKind, game: $("fgNewGame").value, name});
+  if (r.error) return alert(r.error);
+  $("fgNewName").value = ""; fgSel[fgKind] = r.item.id;
+  $("forgePanel").classList.remove("show");      // straight into its chat
+};
+$("fgNewName").onkeydown = e => { if (e.key === "Enter") $("fgNewBtn").click(); };
 $("queueBtn").onclick = openQueue;
 $("qClose").onclick = () => $("queuePanel").classList.remove("show");
 $("qRun").onclick = async () => loadQueue(await api("/api/jobs/run", {on: !(qData && qData.running)}));

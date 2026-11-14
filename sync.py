@@ -635,6 +635,8 @@ class Sync:
                 continue      # files are changing right now; next time
             proj = projects[uid]
             local_dir = proj.get("code_dir")
+            if local_dir and os.path.isfile(os.path.join(local_dir, ".amalgam-nosync")):
+                continue      # a Mod Forge modpack folder: downloaded mods stay on this PC
             if not local_dir or not os.path.isdir(local_dir):
                 if uid not in remote_uids:
                     continue

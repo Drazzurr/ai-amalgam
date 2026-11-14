@@ -221,6 +221,39 @@ chat, so the models can help fix any problems.
 The helpers (lz4 for compressed Skyrim SE archives, LSLib, WolvenKit) come from **Apps → Game files → Install
 helpers**. wcc_lite comes with REDkit (free on Steam); Amalgam finds it in your Steam libraries.
 
+## Mod Forge (PC only)
+
+Press **Mod Forge** in the sidebar. It has two areas:
+
+### Modpack Builder
+1. **Connect Nexus Mods once:** click the Nexus chip at the top and paste your *personal API key* (nexusmods.com →
+   Site preferences → API Keys, at the bottom). It's stored only on this PC and only sent to Nexus Mods. Automatic
+   downloads need Nexus Premium.
+2. **Create a modpack** (name and game: Skyrim Special Edition/AE for now). Its chat opens: tell Claude and GPT what
+   you want. They search Nexus, read mod pages and requirements, ask you only what matters, and keep the plan
+   (install order, which file, which installer options). One drafts, the other checks.
+3. **Approve plan & build.** Amalgam downloads every file, runs each FOMOD installer and fills in the options from
+   what the models suggested, your earlier choices, and the other mods in the pack (patches for mods you have are
+   picked automatically). If an installer has a real choice nobody made, it waits for you: press **Pick options**,
+   choose, and later steps update as you go. Then it checks masters and the plugin limit, works out a load order,
+   and reports problems to the chat, so the models can fix them.
+4. Everything lands in `<Mod Forge folder>\<game>\<modpack>\`: one numbered archive per mod (installer choices
+   already applied, so they install without questions), `Load order.txt` and `Install guide.md`. Drag them into
+   Vortex or Mod Organizer 2.
+5. **I've installed it:** the models check the setup, sort with LOOT and clean plugins with xEdit. Because you
+   approved the plan, LOOT and xEdit run without asking in that modpack (nothing else does). Changing the mod list
+   needs your approval again; installer-option suggestions don't.
+
+The models' own patches and tweaks go in the modpack's `Patches` folder and are packed as the last mod. Downloads
+are kept in `<game>\.downloads`, so rebuilding doesn't download again. Modpack folders are never synced.
+
+### Mod Workshop
+Your own mods. Each one gets a folder in `<Mod Forge folder>\<game>\My Mods\<mod>\` laid out like the game's
+Data folder (work files in `Source`), and its own chat and Code tab, where Claude and GPT build it with you, read
+the game's files, and package it with **📦 Package mod**.
+
+.7z mods open with py7zr (installed by **Apps → Game files → Install helpers**) or 7-Zip; .rar mods need 7-Zip.
+
 ## Mod lists (PC only)
 
 The models can look at your mod manager setup and help fix it. This is a PC feature; the phone app doesn't have it.

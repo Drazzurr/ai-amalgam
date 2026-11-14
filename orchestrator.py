@@ -328,6 +328,7 @@ class Orchestrator:
         self.blender_path = None
         self.game_folders = []      # set by the app: detected game installs + folders you added
         self.mods_on = False        # set by the app: mod-list checks (MODS: lines), PC only
+        self.forge = None           # set by the app on a PC: the Mod Forge (modpack and mod projects)
         self.workspace = runners[0].workdir if runners else "."
 
     # ----- public actions (called from the web UI) -----
@@ -891,15 +892,24 @@ class Orchestrator:
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
         reply, choices = split_choices(reply)
         reply, runs = split_runs(reply) if code_dir else (reply, [])
-        reads, kept_r, mod_reqs = [], [], []
+        reads, kept_r, mod_reqs, forge_reqs = [], [], [], []
+        forge_on = bool(self.forge and self.project_id and self._is_forge_pack())
         for line, in_code in fenced(reply.splitlines()):
             m = None if in_code else READ_RE.match(line)
             mm = None if in_code or m or not self.mods_on else MODS_RE.match(line)
+            fm = fkind = None
+            if forge_on and not in_code and not m and not mm:
+                import forge as _forge
+                fm, fkind = _forge.NEXUS_RE.match(line), "NEXUS"
+                if not fm:
+                    fm, fkind = _forge.PLAN_RE.match(line), "PLAN"
             if m and len(reads) < MAX_READS:
                 reads.append(m.group(1).strip().strip("`"))
             elif mm:
                 if len(mod_reqs) < MAX_MODS:
                     mod_reqs.append(mm.group(1).strip().strip("`") or "overview")
+            elif fm:
+                forge_reqs.append((fkind, fm.group(1).strip().strip("`")))
             elif not m:
                 kept_r.append(line)
         reply = "\n".join(kept_r)
@@ -951,7 +961,9 @@ class Orchestrator:
             self._read_file(r, runner.name)
         for r in mod_reqs:
             self._mods_check(r, runner.name)
-        reads = reads + mod_reqs
+        if forge_reqs:
+            self._forge_lines(forge_reqs, runner.name)
+        reads = reads + mod_reqs + [r for r in forge_reqs if r[0] == "NEXUS"]
         if signal == "NEED USER":
             question = question or "(asked for your input)"
             # held back until a teammate has checked it (see _ask_user)
@@ -1030,6 +1042,30 @@ class Orchestrator:
         if len(text) > 30000:
             text = text[:30000] + "\n[... cut; ask for something narrower ...]"
         self.store.add(self.chat_id, "Reader", "output", f"$ mods {request}\n[for {who}]\n{text}")
+
+    def _is_forge_pack(self):
+        try:
+            it = self.store.forge_item(project_id=self.project_id)
+        except Exception:
+            return False
+        return bool(it and it["kind"] == "pack")
+
+    def _forge_lines(self, reqs, who):
+        """Answer NEXUS:/PLAN: lines in a Mod Forge modpack chat."""
+        self.speaker = "Reader"
+        self.live = {"activity": "looking on Nexus Mods" if any(k == "NEXUS" for k, _ in reqs) else "updating the modpack plan",
+                     "text": "", "rev": self.live["rev"] + 1}
+        try:
+            text = self.forge.handle_lines(self.project_id, reqs, who)
+        except Exception as e:
+            text = f"Couldn't do that: {e}"
+        finally:
+            self.speaker = None
+        if len(text) > 30000:
+            text = text[:30000] + "\n[... cut ...]"
+        if text:
+            head = "; ".join(f"{k.lower()} {t}" for k, t in reqs)[:200]
+            self.store.add(self.chat_id, "Reader", "output", f"$ forge {head}\n[for {who}]\n{text}")
 
     def _turn_reading(self, key):
         """A turn, plus up to three follow-ups when the model asked to read files."""
@@ -1150,7 +1186,8 @@ class Orchestrator:
         """Run the pending commands right away if you marked every one of them 'always allow'."""
         pc, code_dir = self.pending_commands, self.code_dir()
         allowed = set(self.allowed_commands())
-        if not (pc and code_dir and allowed and all(c in allowed for c in pc["commands"])):
+        forge_ok = lambda c: bool(self.forge and self.project_id and self.forge.tools_ok(self.project_id, c))
+        if not (pc and code_dir and all(c in allowed or forge_ok(c) for c in pc["commands"])):
             return False
         self.pending_commands = None
         for cmd in pc["commands"]:
@@ -1181,8 +1218,10 @@ class Orchestrator:
         self.live = {"activity": f"running {command[:60]}", "text": "", "rev": self.live["rev"] + 1}
         before = self._checkpoint(code_dir, "before command")
         try:
+            long_tool = bool(self.forge and self.project_id and self.forge.tools_ok(self.project_id, command))
+            extra = {"timeout": 1800} if long_tool else {}      # LOOT sorting / xEdit cleaning take minutes
             code, out, timed_out = run_command(command, code_dir, env=clean_env(),
-                                               on_proc=lambda p: setattr(self, "_cmd_proc", p))
+                                               on_proc=lambda p: setattr(self, "_cmd_proc", p), **extra)
         finally:
             self._cmd_proc = None
             self.speaker = None
@@ -1426,6 +1465,11 @@ class Orchestrator:
                                          folders="; ".join(self.game_folders[:12]))
         if self.mods_on:
             doc += MODLISTS_LINE
+        if self.forge and self.project_id:
+            try:
+                doc += self.forge.prompt_for(self.project_id)
+            except Exception:
+                pass
         if code_dir and self.blender_path:
             doc += BLENDER_HEADLESS.format(path=self.blender_path)
         if code_dir:

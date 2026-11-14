@@ -356,6 +356,12 @@ class App:
         self.games = {"detected": {}, "state": "idle", "log": []}
         self._load_game_folders()
         self._set_all("mods_on", not self.phone)    # mod-list checks are a PC feature
+        self.forge = None
+        if not self.phone:                           # the Mod Forge is a PC feature too
+            import forge
+            self.forge = forge.Forge(self.store, WORKSPACE, updater.current_version(),
+                                     game_folders=lambda: list(self.orch.game_folders or []))
+        self._set_all("forge", self.forge)
         # The phone's Terminal forwards the port from its Linux system to Chrome, so listen there too.
         # Every request still needs the key (or the pairing code to get it).
         self._host = "0.0.0.0" if self.phone else "127.0.0.1"
@@ -1211,6 +1217,15 @@ class App:
                     before = int(parse_qs(url.query).get("before", ["0"])[0] or 0)
                     msgs, left = app.store.messages_tail(app.orch.chat_id, 80, before) if app.orch.chat_id else ([], 0)
                     return self._json({"messages": msgs, "earlier": left})
+                if url.path in ("/api/forge", "/api/forge/item"):
+                    if not app.forge:
+                        return self._json({"error": "The Mod Forge is on the PC version."}, 404)
+                    if url.path == "/api/forge/item":
+                        st = app.forge.status(int(parse_qs(url.query).get("id", ["0"])[0] or 0))
+                        return self._json(st or {"error": "Not found."}, 200 if st else 404)
+                    import forge
+                    return self._json({"account": app.forge.account(), "root": app.forge.root(), "items": app.forge.items(),
+                                       "games": [{"id": g, "label": v["label"]} for g, v in forge.GAMES.items()]})
                 if url.path == "/api/mod/status":
                     return self._json(getattr(app, "mod_build", {"state": "idle"}))
                 if url.path == "/api/jobs":
@@ -1227,6 +1242,58 @@ class App:
                 if url.path.startswith("/api/code/"):
                     return self._code_get(url)
                 self._json({"error": "not found"}, 404)
+
+            def _forge_post(self, what, data):
+                fg = app.forge
+                if not fg:
+                    return self._json({"error": "The Mod Forge is on the PC version."}, 404)
+                from forge.nexus import NexusError
+                iid = int(data.get("id") or 0)
+                try:
+                    if what == "key":
+                        return self._json({"ok": True, "account": fg.set_key(str(data.get("key") or ""))})
+                    if what == "root":
+                        return self._json({"ok": True, "root": fg.set_root(str(data.get("path") or ""))})
+                    if what == "new":
+                        it = fg.new_item(str(data.get("kind")), str(data.get("game") or "Skyrim Special Edition"),
+                                         str(data.get("name") or ""))
+                        app.switch_to(it["chat_id"])
+                        return self._json({"ok": True, "item": fg.status(it["id"])})
+                    if what == "open":
+                        it = fg.item(iid)
+                        if not it:
+                            return self._json({"error": "Not found."}, 404)
+                        chat = it["chat_id"]
+                        if not chat or app.store.chat_project(chat) != it["project_id"]:
+                            chat = next((c["id"] for c in app.store.chats() if c["project_id"] == it["project_id"]), None)
+                        if chat:
+                            app.switch_to(chat)
+                        else:
+                            app.switch_to(project_id=it["project_id"], new=True)
+                        return self._json({"ok": True})
+                    if what == "approve":
+                        fg.approve(iid, bool(data.get("ok", True)))
+                    elif what == "build":
+                        fg.start_build(iid)
+                    elif what == "stop":
+                        fg.stop_build(iid)
+                    elif what == "plan":
+                        fg.set_plan(iid, [int(x) for x in data.get("order") or []])
+                    elif what == "remove":
+                        fg.remove(iid)
+                        return self._json({"ok": True})
+                    elif what == "fomod":
+                        mid = int(data.get("mod_id") or 0)
+                        if data.get("save"):
+                            view = fg.fomod_set(iid, mid, data.get("choices") or {}, bool(data.get("done")))
+                        else:
+                            view = fg.fomod_view(iid, mid, data.get("choices"))
+                        return self._json({"ok": True, "view": view})
+                    else:
+                        return self._json({"error": "unknown"}, 404)
+                except (ValueError, NexusError, OSError) as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json({"ok": True, "item": fg.status(iid)})
 
             def _code_get(self, url):
                 import codework
@@ -1416,6 +1483,8 @@ class App:
                     else:
                         return self._json({"error": "unknown"}, 404)
                     return self._json(dict(q.view(), ok=True))
+                elif path.startswith("/api/forge/"):
+                    return self._forge_post(path.rsplit("/", 1)[1], data)
                 elif path in ("/api/mod/check", "/api/mod/build"):
                     import modpack
                     code_dir = app.orch.code_dir()
