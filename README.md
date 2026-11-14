@@ -221,6 +221,29 @@ chat, so the models can help fix any problems.
 The helpers (lz4 for compressed Skyrim SE archives, LSLib, WolvenKit) come from **Apps → Game files → Install
 helpers**. wcc_lite comes with REDkit (free on Steam); Amalgam finds it in your Steam libraries.
 
+## The Artisan (art and 3D)
+
+A third member of the chat for art: concept art, portraits, tokens and maps, 3D models for printed minis,
+Skyrim-ready models, rigging and animation. It thinks with GPT (a separate session on your ChatGPT plan, so it
+doesn't use Claude) and makes things with free models that run on your PC:
+
+- **PAINT** with FLUX.1 dev (pictures, or reworking a picture),
+- **SCULPT** with TRELLIS.2 (a textured 3D model from one picture, ComfyUI's official template),
+- **Blender** (Apps → Blender) for cleanup, print prep, rigging and renders.
+
+**Setup (once):** Apps → Artisan → **Install**. Amalgam downloads ComfyUI (portable, about 2 GB), FLUX.1 dev
+(about 17 GB) and the TRELLIS.2 model files, all free. No accounts are needed. Already have ComfyUI (for example
+ComfyUI Desktop)? Put its address under Advanced instead.
+
+**Use it:** tap the Artisan's face at the top of a chat to bring it in (it starts off in every chat), or start a
+message with @artisan, /paint, /sculpt, /mini, /skyrim-model or /art-style. Its pictures go into the chat and the
+Gallery; 3D models are saved as .glb files. ComfyUI runs only while the Artisan works: it unloads the models after
+3 idle minutes and closes after 10, so your graphics card is free for games (or press **Free graphics card**).
+
+The Artisan's skill sets (art direction and house style, FLUX prompting, picture to 3D, 3D-printed minis, Skyrim
+models, rigging and animation) are in `artisan/skills`. On the phone it can still talk and sketch with GPT's image
+tool; the local tools are PC-only.
+
 ## Mod Forge (PC only)
 
 Press **Mod Forge** in the sidebar. It has two areas:

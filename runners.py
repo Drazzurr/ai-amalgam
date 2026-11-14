@@ -884,6 +884,21 @@ class CodexRunner(Runner):
                 pass
 
 
+class ArtisanRunner(CodexRunner):
+    """The Artisan: art and 3D. Thinks with GPT (a separate Codex session, on the same ChatGPT plan) and makes
+    things with the free local tools the app runs for it (FLUX, TRELLIS.2, Blender)."""
+
+    name = "Artisan"
+    key = "artisan"
+    can_use_drive = False      # leaves documents to Claude and GPT
+
+    def list_connections(self):
+        return []
+
+    def usage(self):
+        return {"kind": "shared", "with": "GPT"}
+
+
 class DemoRunner(Runner):
     """Stand-in model for trying the app without the real tools (--demo)."""
 
@@ -909,6 +924,8 @@ class DemoRunner(Runner):
 
     def usage(self):
         now = time.time()
+        if self.key == "artisan":
+            return {"kind": "shared", "with": "GPT"}
         if self.key == "gpt":
             return {"kind": "percent", "as_of": now, "link": "https://chatgpt.com/settings/usage",
                     "primary": {"used_percent": 12.0 + self.turns, "resets_at": now + 3 * 3600, "window_minutes": 300},
@@ -928,7 +945,16 @@ class DemoRunner(Runner):
             "| Step | Owner |\n|---|---|\n| Plan | Claude |\n| Review | GPT |\n\n```python\nprint('hi')\n```",
         ]
         forge_pack = "=== MOD FORGE: MODPACK BUILDER ===" in prompt
-        if forge_pack and "I've installed this modpack" in prompt and "LOOT (stand-in)" not in prompt and self.key == "claude":
+        art = self.key == "artisan" and "=== YOU ARE THE ARTISAN ===" in prompt
+        if art and "PAINT (" not in prompt and "$ paint" not in prompt:
+            lines = [f"({self.name}, demo) Brief: a moonlit elven ranger, painterly, portrait. Painting it now.",
+                     "PAINT: a moonlit elven ranger with a longbow, full body, plain light grey background | size 832x1216",
+                     "NEXT"]
+        elif art and "make it 3d" in prompt.lower() and "$ sculpt" not in prompt:
+            lines = [f"({self.name}, demo) The picture reads well. Turning it into a 3D model.", "SCULPT: last", "NEXT"]
+        elif art:
+            lines = [f"({self.name}, demo) Done. The silhouette reads clearly; the bow hand could be cleaner.", "DONE"]
+        elif forge_pack and "I've installed this modpack" in prompt and "LOOT (stand-in)" not in prompt and self.key == "claude":
             lines = [f"({self.name}, demo) Sorting the load order with LOOT.",
                      'RUN: "/tmp/fakeloot/LOOT.exe" --game="Skyrim Special Edition" --auto-sort', "NEXT"]
         elif forge_pack and "LOOT (stand-in)" in prompt:
@@ -1008,5 +1034,5 @@ class DemoRunner(Runner):
 
 def make_runners(workdir, demo=False):
     if demo:
-        return [DemoRunner(workdir, "Claude", "claude"), DemoRunner(workdir, "GPT", "gpt")]
-    return [ClaudeRunner(workdir), CodexRunner(workdir)]
+        return [DemoRunner(workdir, "Claude", "claude"), DemoRunner(workdir, "GPT", "gpt"), DemoRunner(workdir, "Artisan", "artisan")]
+    return [ClaudeRunner(workdir), CodexRunner(workdir), ArtisanRunner(workdir)]

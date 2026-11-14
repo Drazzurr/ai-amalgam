@@ -13,7 +13,7 @@
   :root {
     --bg: #1a1b1e; --side: #141517; --raised: #24262a; --raised2: #2c2e33; --line: #2e3035;
     --ink: #ecedef; --quiet: #9b9da3; --faint: #6c6e75;
-    --you: #6c8cff; --claude: #e07a55; --gpt: #1fbf85; --ask: #f0b232;
+    --you: #6c8cff; --claude: #e07a55; --gpt: #1fbf85; --artisan: #b47cf0; --ask: #f0b232;
     --radius: 14px;
   }
   * { box-sizing: border-box; }
@@ -197,6 +197,9 @@
   .msg:hover { background: rgba(255,255,255,.02); }
   .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 15px; color: #fff; flex: none; }
   .av.You { background: var(--you); } .av.Claude { background: var(--claude); } .av.GPT { background: var(--gpt); }
+  .av.Artisan { background: var(--artisan); } .name.Artisan { color: var(--artisan); }
+  .artbar { height: 6px; background: var(--raised2); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .artbar i { display: block; height: 100%; background: var(--artisan); }
   .meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
   .name { font-weight: 650; } .name.You { color: var(--you); } .name.Claude { color: var(--claude); } .name.GPT { color: var(--gpt); }
   .time { font-size: 12px; color: var(--faint); }
@@ -879,7 +882,7 @@
       <input class="field" id="scName" placeholder="name, e.g. npc" spellcheck="false" maxlength="24">
       <input class="field" id="scDesc" placeholder="What it's for (shown in the menu)" maxlength="120">
       <textarea class="field" id="scInstr" placeholder="Instructions for the models. Whatever you type after the shortcut is the request they apply these to."></textarea>
-      <select class="field" id="scOnly"><option value="">Both models</option><option value="claude">Only Claude</option><option value="gpt">Only GPT</option></select>
+      <select class="field" id="scOnly"><option value="">Both models</option><option value="claude">Only Claude</option><option value="gpt">Only GPT</option><option value="artisan">Only the Artisan</option></select>
       <div><button class="btn go" id="scSave">Save</button> <button class="btn" id="scCancel">Cancel</button> <small class="plain" id="scErr" style="color:#f08a84"></small></div>
     </div>
   </div>
@@ -925,7 +928,7 @@ function appHello() {
 }
 const $ = id => document.getElementById(id);
 let lastId = 0, chatId = undefined, rounds = 4, roundsTouched = false, lastStatus = "idle";
-const initials = {You: "Y", Claude: "C", GPT: "G", Terminal: ">_", "You ran": ">_", Reader: "◇"};
+const initials = {You: "Y", Claude: "C", GPT: "G", Artisan: "A", Terminal: ">_", "You ran": ">_", Reader: "◇"};
 let commandsById = {}, termItems = [];
 function termHtml(text) {
   const lines = text.split("\n");
@@ -1249,6 +1252,7 @@ function renderModels(models) {
     const m = models.find(x => x.key === b.dataset.face);
     if (!m) return;
     if (m.enabled && models.filter(x => x.enabled).length === 1) { toast("At least one model needs to stay on."); return; }
+    if (m.key === "artisan" && !m.enabled) toast("The Artisan joins this chat: art, 3D models and minis. It uses GPT's plan.");
     api("/api/settings", {enabled: {[m.key]: !m.enabled}});
     toast(`${m.name} is ${m.enabled ? "off" : "back on"} in this chat.`);
   });
@@ -1310,6 +1314,8 @@ function renderUsage(usage, models) {
   $("usage").innerHTML = models.map(m => {
     const u = ms[m.key] || {};
     let body = "";
+    if (u.kind === "shared") return `<div class="ublock"><div class="uhead">${av(m.name)}${esc(m.name)}</div>
+      <p class="unote">Uses ${esc(u.with)}'s plan (counted above). In this app: ${u.turns_5h || 0} replies in 5 h · ${u.turns_7d || 0} this week</p></div>`;
     if (u.kind === "percent") {
       const rows = ["primary", "secondary"].filter(k => u[k]).map(k => {
         const w = u[k], pct = w.used_percent == null ? null : Math.round(w.used_percent);
@@ -2536,7 +2542,7 @@ function renderShortcuts(list) {
   const sig = JSON.stringify(list);
   if (sig === scSig) return;
   scSig = sig;
-  $("scList").innerHTML = list.map(x => `<div class="scrow"><b>/${esc(x.name)}</b><small title="${esc(x.instructions)}">${esc(x.description || "")}${x.only ? ` · only ${x.only === "gpt" ? "GPT" : "Claude"}` : ""}</small>
+  $("scList").innerHTML = list.map(x => `<div class="scrow"><b>/${esc(x.name)}</b><small title="${esc(x.instructions)}">${esc(x.description || "")}${x.only ? ` · only ${x.only === "gpt" ? "GPT" : x.only === "artisan" ? "the Artisan" : "Claude"}` : ""}</small>
     ${x.custom ? `<span class="lnk" data-scedit="${esc(x.name)}">Edit</span><span class="lnk" data-scdel="${esc(x.name)}">Delete</span>` : `<span class="lnk" data-sccopy="${esc(x.name)}" title="Make your own version of this shortcut">Customize</span>`}</div>`).join("");
   const mine = () => shortcutList.filter(x => x.custom).map(({name, description, instructions, only}) => ({name, description, instructions, only}));
   $("scList").querySelectorAll("[data-scdel]").forEach(b => b.onclick = async () => {
@@ -2632,6 +2638,39 @@ function renderApps(apps) {
       const box = $("input"); box.value = "/" + x.dataset.modsc + " " + box.value.replace(/^\/\S+\s*/, ""); box.focus();
       box.dispatchEvent(new Event("input", {bubbles: true}));
     });
+  }
+  const ar = apps.artisan;   // the Artisan's local tools: the PC app only
+  if (ar && ar.pc) {
+    const ins = ar.install || {}, pct = ins.total ? Math.round(100 * ins.done / ins.total) : 0;
+    const gb = n => (n / 1e9).toFixed(n > 1e10 ? 0 : 1) + " GB";
+    const ready = ar.installed && ar.flux;
+    $("appsBox").insertAdjacentHTML("beforeend", `<div class="app" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <div class="mrow" style="padding-top:0">${av("Artisan")}<div class="who"><b>Artisan</b><small class="plain">Art and 3D. Thinks with GPT; paints with FLUX and makes 3D models with TRELLIS.2 on this PC, free.</small></div></div>
+      ${line(ar.installed, ar.own ? "Using your own ComfyUI at " + esc(ar.url) : "ComfyUI installed", "ComfyUI not installed yet")}
+      ${line(ar.flux, "FLUX.1 dev downloaded (pictures)", "FLUX.1 dev not downloaded yet (about 17 GB)")}
+      ${line(ar.running, ar.busy ? "Working right now" : "ComfyUI is running (it closes by itself when idle)", "ComfyUI is closed (it starts when the Artisan needs it)")}
+      ${ins.running ? `<div class="st" style="margin-top:6px">${esc(ins.step)}${ins.total ? ` · ${gb(ins.done)} of ${gb(ins.total)}` : ""}</div><div class="artbar"><i style="width:${pct}%"></i></div>` : ""}
+      ${ins.error ? `<div class="st" style="color:#f08a84;margin-top:6px">${esc(ins.error)}</div>` : ""}
+      ${ins.note ? `<div class="st" style="margin-top:6px">${esc(ins.note)}</div>` : ""}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        <button class="btn ${ready ? "" : "go"}" id="artInstall" ${ins.running ? "disabled" : ""}>${ins.running ? "Installing…" : ready ? "Check 3D models" : "Install (one time)"}</button>
+        ${ar.installed ? `<button class="btn" id="artOpen" title="Open ComfyUI in your browser (to try things yourself)">Open ComfyUI</button>` : ""}
+        ${ar.installed && !ar.own ? `<button class="btn" id="artUpdate">Update ComfyUI</button>` : ""}
+        ${ar.running ? `<button class="btn" id="artStop" title="Close ComfyUI now and free the graphics card">Free graphics card</button>` : ""}</div>
+      <details style="margin-top:8px"><summary class="st" style="cursor:pointer">Advanced</summary>
+        <div class="st" style="margin-top:6px">Already have ComfyUI (e.g. ComfyUI Desktop)? Put its address here instead of installing another one:</div>
+        <div style="display:flex;gap:6px;margin-top:4px"><input class="field" id="artUrl" placeholder="http://127.0.0.1:8000" value="${esc(ar.own ? ar.url : "")}" style="flex:1"><button class="btn" id="artUrlSave">Save</button></div>
+        <div class="st" style="margin-top:6px">Your own 3D workflow (ComfyUI → Export (API), a .json file), if the built-in TRELLIS.2 template doesn't work:</div>
+        <div style="display:flex;gap:6px;margin-top:4px"><input class="field" id="artWf" placeholder="C:\\path\\my_trellis_api.json" value="${esc(ar.workflow_3d || "")}" style="flex:1"><button class="btn" id="artWfSave">Save</button></div>
+      </details>
+      <p class="help" style="margin:8px 0 0">Bring the Artisan into a chat by tapping its face at the top, or start a message with @artisan, /paint, /sculpt, /mini or /skyrim-model. ComfyUI only runs while it works and frees the graphics card a few minutes later.</p></div>`);
+    const go = async (what, body = {}) => { const r = await api("/api/artisan/" + what, body); if (r.error) alert(r.error); appsSig = ""; return r; };
+    $("artInstall").onclick = () => go("install");
+    if ($("artOpen")) $("artOpen").onclick = () => go("open");
+    if ($("artStop")) $("artStop").onclick = () => go("stop");
+    if ($("artUpdate")) $("artUpdate").onclick = async () => { $("artUpdate").disabled = true; $("artUpdate").textContent = "Updating…"; const r = await go("update"); if (r.log) toast("ComfyUI updated."); };
+    $("artUrlSave").onclick = () => go("settings", {url: $("artUrl").value, folder: null, workflow: null});
+    $("artWfSave").onclick = () => go("settings", {url: null, folder: null, workflow: $("artWf").value});
   }
   $("gameAdd").onclick = async () => { const r = await api("/api/games/add", {}); if (r.error) alert(r.error); appsSig = ""; };
   $("gameHelpers").onclick = () => api("/api/games/install-helpers", {});

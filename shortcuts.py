@@ -49,6 +49,35 @@ BUILTIN = [
      "instructions": "Use the game-files skill. Read the game file or archive the user named with READ lines and "
                      "report what's inside that matters for their goal. Go deeper (list, extract, records) where it "
                      "helps."},
+    {"name": "paint", "description": "The Artisan paints it (FLUX, on your PC)",
+     "only": "artisan",
+     "instructions": "Artisan: paint what the user described. Settle the brief in one line (subject, use, style, size), "
+                     "follow the project's style guide if there is one, PAINT it, look at the result and say plainly "
+                     "what works. Offer one or two refinements; redo it if something's clearly wrong."},
+    {"name": "sculpt", "description": "The Artisan turns a picture into a 3D model (TRELLIS.2)",
+     "only": "artisan",
+     "instructions": "Artisan: turn the picture the user means (attached, named, or the latest) into a 3D model with "
+                     "SCULPT. If the picture isn't a clean single subject on a plain background, PAINT a clean source "
+                     "version first (see the picture-to-3D skill). Then say what the model is good for and what to "
+                     "clean up in Blender."},
+    {"name": "mini", "description": "Design a 3D-printable miniature, picture to STL",
+     "only": "artisan",
+     "instructions": "Artisan: make a 3D-printable miniature of what the user described, following the minis skill. "
+                     "Ask once for scale (28 or 32 mm) and base size if they haven't said. PAINT a clean source, "
+                     "SCULPT it, then plan the Blender prep (scale in mm, thicken thin parts, manifold, split if "
+                     "needed, STL export) and run it with the Blender tools when they're on."},
+    {"name": "skyrim-model", "description": "Make a Skyrim-ready model (mesh, textures, NIF)",
+     "only": "artisan",
+     "instructions": "Artisan: make a Skyrim SE/AE asset of what the user described, following the Skyrim models "
+                     "skill: source picture, SCULPT, size it against a vanilla mesh, triangle budget, DDS textures "
+                     "(diffuse, _n with specular in alpha), PyNifly export, and the Data folder layout so it can be "
+                     "packaged. Say which steps need the user (e.g. Outfit Studio for armour)."},
+    {"name": "art-style", "description": "Set up a house art style for this project",
+     "only": "artisan",
+     "instructions": "Artisan: set up this project's house art style with the user. Look at any references they gave "
+                     "and the project's lore, propose 2-3 directions as one test PAINT each (same subject), let them "
+                     "pick, then write the style guide from the art-direction skill and save the key lines with "
+                     "REMEMBER so every later piece matches."},
     {"name": "modlist", "description": "Build a mod list by answering a few questions (PC)",
      "only": "", "pc_only": True,
      "instructions": "Help the user build a mod list. First run MODS: overview to see their mod manager, game version "
@@ -88,7 +117,7 @@ def custom(store):
         if isinstance(it, dict) and NAME_RE.match(str(it.get("name", ""))) and str(it.get("instructions", "")).strip():
             out.append({"name": it["name"], "description": str(it.get("description", ""))[:120],
                         "instructions": str(it["instructions"])[:4000],
-                        "only": it.get("only") if it.get("only") in ("claude", "gpt") else "", "custom": True})
+                        "only": it.get("only") if it.get("only") in ("claude", "gpt", "artisan") else "", "custom": True})
     return out
 
 
@@ -117,7 +146,7 @@ def save_custom(store, items):
         seen.add(name)
         clean.append({"name": name, "description": str(it.get("description", "")).strip()[:120],
                       "instructions": str(it.get("instructions", "")).strip()[:4000],
-                      "only": it.get("only") if it.get("only") in ("claude", "gpt") else ""})
+                      "only": it.get("only") if it.get("only") in ("claude", "gpt", "artisan") else ""})
     store.set_setting(SETTING, json.dumps(clean[:50]))
     return None
 

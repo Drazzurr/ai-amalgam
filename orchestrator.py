@@ -15,7 +15,8 @@ from codework import COMMAND_TIMEOUT, check_code_dir, run_command
 MAX_TRANSCRIPT_CHARS = 60000
 
 SIGNAL_RE = re.compile(r"^\W*(NEXT|DONE|NEED USER|AGREE|HOLD)\b\W*:?\s*(.*)$", re.IGNORECASE)
-MENTION_RE = re.compile(r"@(claude|gpt|chatgpt|codex|all)\b", re.IGNORECASE)
+MENTION_RE = re.compile(r"@(claude|gpt|chatgpt|codex|artisan|all)\b", re.IGNORECASE)
+ARTISAN_ON = "artisan:on"      # in a chat's models_off list: the Artisan is switched on there (it starts off)
 
 PROMPT_TEMPLATE = """You are {name}, one of several AI participants in a group discussion run by the AI Amalgam app.
 Participants: you ({name}), {others}, and the user (the human who leads and makes the decisions).
@@ -190,6 +191,23 @@ This is the shared document the group is working on.{copy}
 DOC_COPY = ("\nIf your Google Drive/Docs tools aren't available this turn, don't stop: read the copy of this document "
             "saved {age} ago at {path} (it may miss very recent edits; say so if that matters). Edits still need the "
             "Docs tools.")
+ARTISAN_LINE = """
+=== YOU ARE THE ARTISAN ===
+You are the group's art and 3D specialist: concept art, illustrations, maps and tokens, character and creature designs, textures, 3D models for 3D-printed miniatures, game and mod models (Skyrim and others), rigging and animation. Claude and GPT handle writing, lore, code and documents; you own how things look. Keep the user's house style and earlier decisions consistent across everything you make.
+{tools}
+Your skill sets (open the one that fits before you start a piece of work; they hold the checklists and numbers):
+{skills}
+Work like an art director: settle the brief (subject, style, use, size or scale) in a sentence, make it, look at the result (you can see the pictures), say plainly what works and what doesn't, and iterate. Show the user each finished piece. Ask the user (NEED USER) only for real taste decisions; offer 2-3 concrete options when you do.
+"""
+ARTISAN_TOOLS_PC = """Tools on this PC (free, local; the app runs them when you put the line just above your last line, up to 3, and you see the results straight after):
+PAINT: <prompt> [| size <W>x<H>] [| from <last or file name> | strength <0.2-0.9>] [| seed <n>]: FLUX.1 dev. Write prompts as clear descriptive sentences (subject, pose, setting, lighting, style, medium); no negative prompts. Sizes are multiples of 16, about 1 megapixel (1024x1024, 832x1216 portrait, 1216x832 landscape). "from" reworks a picture (lower strength keeps more of it). Same seed + same prompt = same picture.
+SCULPT: <last or file name>: TRELLIS.2 turns one picture into a textured 3D model (.glb). For a good model, PAINT a clean source first: one subject, whole body in frame, plain light background, soft even lighting, front three-quarter view, no cropping. Then clean it up, scale it, rig it or prep it for printing with Blender.
+Each PAINT takes about half a minute (longer the first time while the model loads); SCULPT takes a few minutes.{status}
+You can also use your own image generation tool for quick sketches."""
+ARTISAN_TOOLS_PHONE = """On the phone the local art tools (FLUX, TRELLIS.2) aren't available: use your own image generation tool, and save heavy work (3D models, final art) for when the user is on the PC."""
+ARTISAN_PEER_LINE = """
+The Artisan is also in this chat: the art and 3D specialist (it paints with FLUX, makes 3D models with TRELLIS.2, and handles Blender, minis and game models). Leave art and 3D work to it and help with what it needs (lore details, descriptions, code, file layouts).
+"""
 IMAGE_LINE = """
 You can create images with your image generation tool (the user's ChatGPT plan covers it). When the user or the group asks for art, generate it rather than only describing it; the app shows your images in the chat and saves them, and the other models can look at them. Say in one line what you made.
 """
@@ -329,6 +347,7 @@ class Orchestrator:
         self.game_folders = []      # set by the app: detected game installs + folders you added
         self.mods_on = False        # set by the app: mod-list checks (MODS: lines), PC only
         self.forge = None           # set by the app on a PC: the Mod Forge (modpack and mod projects)
+        self.artisan = None         # set by the app on a PC: the Artisan's local art tools (ComfyUI)
         self.workspace = runners[0].workdir if runners else "."
 
     # ----- public actions (called from the web UI) -----
@@ -402,18 +421,27 @@ class Orchestrator:
                         self.store.set_setting(name, sp)
             if enabled:
                 # switched on or off for this chat only (a new chat starts with everyone on)
-                off = set(self._models_off())
+                raw = (self.chat_settings() or {}).get("models_off") or []
+                off = {k for k in raw}
                 for key, on in enabled.items():
                     if key in self.enabled:
                         self.enabled[key] = True
-                        (off.discard if on else off.add)(key)
+                        if key == "artisan":
+                            off.discard("artisan")
+                            (off.add if on else off.discard)(ARTISAN_ON)
+                        else:
+                            (off.discard if on else off.add)(key)
                 if self.chat_id is None:
                     self.pending_chat_settings["models_off"] = sorted(off)
                 else:
                     self.store.set_chat_settings(self.chat_id, models_off=sorted(off))
 
     def _models_off(self):
-        return list((self.chat_settings() or {}).get("models_off") or [])
+        raw = list((self.chat_settings() or {}).get("models_off") or [])
+        off = [k for k in raw if k != ARTISAN_ON]
+        if "artisan" in self.runners and ARTISAN_ON not in raw and "artisan" not in off:
+            off.append("artisan")         # the Artisan joins a chat only when you switch it on (or @artisan it)
+        return off
 
     def chat_settings(self):
         if self.chat_id is None:
@@ -832,6 +860,8 @@ class Orchestrator:
         runner.images = [os.path.join(runner.workdir, a["path"]) for a in
                          (self.store.attachments(self.chat_id) if self.chat_id else [])
                          if a["path"].lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))][-12:]
+        if key == "artisan":       # it looks at the newest pictures in the chat (its own work included)
+            runner.images = (runner.images + [p for p in self._chat_images(4) if p not in runner.images])[-12:]
         before = self._checkpoint(code_dir, f"before {runner.name}'s turn")
         self.last_question = None
         prompt = self._build_prompt(key, extra)
@@ -892,12 +922,19 @@ class Orchestrator:
             self._note(f"{runner.name} {edit['summary'][0].lower() + edit['summary'][1:]}")
         reply, choices = split_choices(reply)
         reply, runs = split_runs(reply) if code_dir else (reply, [])
-        reads, kept_r, mod_reqs, forge_reqs = [], [], [], []
+        reads, kept_r, mod_reqs, forge_reqs, art_reqs = [], [], [], [], []
+        art_on = key == "artisan" and self.artisan is not None
         forge_on = bool(self.forge and self.project_id and self._is_forge_pack())
         for line, in_code in fenced(reply.splitlines()):
             m = None if in_code else READ_RE.match(line)
             mm = None if in_code or m or not self.mods_on else MODS_RE.match(line)
             fm = fkind = None
+            if art_on and not in_code and not m and not mm:
+                import artisan as _art
+                am = _art.PAINT_RE.match(line) or _art.SCULPT_RE.match(line)
+                if am and len(art_reqs) < _art.MAX_JOBS:
+                    art_reqs.append(("PAINT" if _art.PAINT_RE.match(line) else "SCULPT", am.group(1).strip().strip("`")))
+                    continue
             if forge_on and not in_code and not m and not mm:
                 import forge as _forge
                 fm, fkind = _forge.NEXUS_RE.match(line), "NEXUS"
@@ -963,7 +1000,9 @@ class Orchestrator:
             self._mods_check(r, runner.name)
         if forge_reqs:
             self._forge_lines(forge_reqs, runner.name)
-        reads = reads + mod_reqs + [r for r in forge_reqs if r[0] == "NEXUS"]
+        if art_reqs:
+            self._art_lines(art_reqs, runner.name)
+        reads = reads + mod_reqs + [r for r in forge_reqs if r[0] == "NEXUS"] + art_reqs
         if signal == "NEED USER":
             question = question or "(asked for your input)"
             # held back until a teammate has checked it (see _ask_user)
@@ -1042,6 +1081,35 @@ class Orchestrator:
         if len(text) > 30000:
             text = text[:30000] + "\n[... cut; ask for something narrower ...]"
         self.store.add(self.chat_id, "Reader", "output", f"$ mods {request}\n[for {who}]\n{text}")
+
+    def _chat_images(self, n=6):
+        return [m["text"] for m in self.store.messages(self.chat_id) if m["kind"] == "image" and os.path.isfile(m["text"])][-n:] \
+            if self.chat_id else []
+
+    def _art_lines(self, reqs, who):
+        """Run the Artisan's PAINT:/SCULPT: lines with the local tools; results go into the chat."""
+        out_dir = os.path.join(self.workspace, "images", f"chat-{self.chat_id}")
+        files = [os.path.join(self.workspace, a["path"]) for a in self.store.attachments(self.chat_id)] if self.chat_id else []
+        for kind, text in reqs:
+            if self._stop.is_set():
+                return
+            self.speaker = who
+            self.live = {"activity": "painting with FLUX" if kind == "PAINT" else "sculpting a 3D model with TRELLIS.2",
+                         "text": "", "rev": self.live["rev"] + 1}
+
+            def say(what):
+                self.live = {"activity": what, "text": "", "rev": self.live["rev"] + 1}
+            try:
+                msg, imgs, other = self.artisan.handle(kind, text, out_dir, files, self._chat_images(), say=say,
+                                                       stop=self._stop.is_set)
+            except Exception as e:
+                msg, imgs, other = f"{kind}: {text[:120]}\nCouldn't do that: {e}", [], []
+            finally:
+                self.speaker = None
+            for img in imgs:
+                self.store.add(self.chat_id, who, "image", img)
+            self.store.add(self.chat_id, "Reader", "output", f"$ {kind.lower()} {text[:160]}\n[for {who}]\n{msg}"
+                           + "".join(f"\n{f}" for f in other))
 
     def _is_forge_pack(self):
         try:
@@ -1352,11 +1420,12 @@ class Orchestrator:
         """A model wants to ask you something. Its teammates check the question first; if one
         holds it, the asker reconsiders once. Returns 'asked', 'continue' or 'error'."""
         q = self.last_question
-        reviewers = [k for k in self._active() if k != asker]
+        # Claude and GPT check each other's questions; the Artisan sticks to art (it would spend GPT's plan)
+        reviewers = [k for k in self._active() if k != asker and k != "artisan"]
         if not reviewers or not self.check_questions or self._user_spoke():
             return "asked" if self._publish(q) else "continue"
         names = " and ".join(self.runners[k].name for k in reviewers)
-        self._note(f"{q[0]} wants to ask you something; {names} is checking it first.")
+        self._note(f"{q[0]} wants to ask you something; {names} {'are' if len(reviewers) > 1 else 'is'} checking it first.")
         choices_txt = "".join(f"\nCHOICE: {c}" for c in q[2])
         holds, extra_qs = [], []
         for key in reviewers:
@@ -1444,6 +1513,23 @@ class Orchestrator:
         doc += DOC_LINE.format(link=link, copy=copy) if link else ""
         if key == "gpt":
             doc += IMAGE_LINE
+        if key == "artisan":
+            import artisan as _art
+            if self.artisan is not None:
+                try:
+                    st = self.artisan.status()
+                    status = "" if st["installed"] and st["flux"] else (
+                        "\nRight now the tools aren't set up yet (" + ("FLUX isn't downloaded" if st["installed"] else
+                        "ComfyUI isn't installed") + "): tell the user to press Install in Apps → Artisan (one time), "
+                        "and use your own image generation tool meanwhile.")
+                except Exception:
+                    status = ""
+                tools = ARTISAN_TOOLS_PC.format(status=status)
+            else:
+                tools = ARTISAN_TOOLS_PHONE
+            doc += ARTISAN_LINE.format(tools=tools, skills=_art.copy_skills_note() or "(none yet)") + IMAGE_LINE
+        elif "artisan" in self._active():
+            doc += ARTISAN_PEER_LINE
         if settings.get("allow_edits") and editor:
             doc += (EDITS_ON_EDITOR.format(edit_format=docedits.FORMAT_HELP) if runner.can_edit_docs
                     else EDITS_ON_OTHER.format(editor=editor, edit_format=docedits.FORMAT_HELP))

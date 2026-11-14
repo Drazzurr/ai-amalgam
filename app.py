@@ -362,6 +362,11 @@ class App:
             self.forge = forge.Forge(self.store, WORKSPACE, updater.current_version(),
                                      game_folders=lambda: list(self.orch.game_folders or []))
         self._set_all("forge", self.forge)
+        self.artisan = None
+        if not self.phone:                           # the Artisan's local tools (ComfyUI) run on the PC
+            import artisan
+            self.artisan = artisan.Artisan(self.store, WORKSPACE)
+        self._set_all("artisan", self.artisan)
         # The phone's Terminal forwards the port from its Linux system to Chrome, so listen there too.
         # Every request still needs the key (or the pairing code to get it).
         self._host = "0.0.0.0" if self.phone else "127.0.0.1"
@@ -947,6 +952,8 @@ class App:
         view = {"games": games}
         if not self.phone:
             view["mods"] = self._mods_view()
+            if self.artisan:
+                view["artisan"] = self._cached("artisan", 3, self.artisan.status)
         return {**view, "blender": {"path": path, "version": ver, "listening": listening,
                             "claude": conn.get("claude", False), "gpt": conn.get("gpt", False),
                             "on": self.orch.blender_on, "setup": {"state": setup.state, "log": setup.log[-12:]}}}
@@ -1217,6 +1224,11 @@ class App:
                     before = int(parse_qs(url.query).get("before", ["0"])[0] or 0)
                     msgs, left = app.store.messages_tail(app.orch.chat_id, 80, before) if app.orch.chat_id else ([], 0)
                     return self._json({"messages": msgs, "earlier": left})
+                if url.path == "/api/artisan":
+                    import artisan
+                    st = app.artisan.status() if app.artisan else {"pc": False}
+                    st["skills"] = [{"name": n, "title": t} for n, t, _p in artisan.skills_index()]
+                    return self._json(st)
                 if url.path in ("/api/forge", "/api/forge/item"):
                     if not app.forge:
                         return self._json({"error": "The Mod Forge is on the PC version."}, 404)
@@ -1483,6 +1495,27 @@ class App:
                     else:
                         return self._json({"error": "unknown"}, 404)
                     return self._json(dict(q.view(), ok=True))
+                elif path.startswith("/api/artisan/"):
+                    ar, what = app.artisan, path.rsplit("/", 1)[1]
+                    if not ar:
+                        return self._json({"error": "The Artisan's art tools run on the PC."}, 404)
+                    try:
+                        if what == "install":
+                            ar.start_install()
+                        elif what == "update":
+                            return self._json({"ok": True, "log": ar.update_comfy()})
+                        elif what == "stop":
+                            ar.stop()
+                        elif what == "settings":
+                            ar.set_own(data.get("url"), data.get("folder"), data.get("workflow"))
+                        elif what == "open":
+                            c = ar.ensure_running()
+                            webbrowser.open(c.url + "/")
+                        else:
+                            return self._json({"error": "unknown"}, 404)
+                    except Exception as e:
+                        return self._json({"error": str(e)}, 400)
+                    return self._json({"ok": True, "status": ar.status()})
                 elif path.startswith("/api/forge/"):
                     return self._forge_post(path.rsplit("/", 1)[1], data)
                 elif path in ("/api/mod/check", "/api/mod/build"):
@@ -1594,8 +1627,11 @@ class App:
                     app.install_update()
                 elif path == "/api/open-url":
                     url = str(data.get("url", ""))
-                    if url in ("https://claude.ai/settings/usage", "https://chatgpt.com/settings/usage") or \
-                            re.fullmatch(r"https://docs\.google\.com/document/d/[A-Za-z0-9_-]+/edit", url):
+                    if url in ("https://claude.ai/settings/usage", "https://chatgpt.com/settings/usage",
+                               "https://next.nexusmods.com/settings/api-keys") or \
+                            re.fullmatch(r"https://docs\.google\.com/document/d/[A-Za-z0-9_-]+/edit", url) or \
+                            re.fullmatch(r"https://www\.nexusmods\.com/[a-z0-9]+/mods/\d+", url) or \
+                            re.fullmatch(r"http://127\.0\.0\.1:\d{2,5}/?", url):
                         webbrowser.open(url)  # your normal browser, where you're signed in
                 elif path == "/api/refresh-connections":
                     app.refresh_connections()
@@ -1802,6 +1838,11 @@ class App:
 
     def shutdown(self):
         print("Shutting down.")
+        if getattr(self, "artisan", None):
+            try:
+                self.artisan.stop()            # close ComfyUI and free the graphics card
+            except Exception:
+                pass
         if self.term:
             self.term.stop()
         for o in self.all_orchs():
