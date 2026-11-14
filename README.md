@@ -252,20 +252,29 @@ Press **Mod Forge** in the sidebar. It has two areas:
 1. **Connect Nexus Mods once:** click the Nexus chip at the top and paste your *personal API key* (nexusmods.com →
    Site preferences → API Keys, at the bottom). It's stored only on this PC and only sent to Nexus Mods. Automatic
    downloads need Nexus Premium.
-2. **Create a modpack** (name and game: Skyrim Special Edition/AE for now). Its chat opens: tell Claude and GPT what
+2. **Create a modpack** (name and game: Skyrim Special Edition/AE, Baldur's Gate 3, Cyberpunk 2077, Mass Effect
+   Legendary Edition or The Witcher 3). Its chat opens: tell Claude and GPT what
    you want. They search Nexus, read mod pages and requirements, ask you only what matters, and keep the plan
    (install order, which file, which installer options). One drafts, the other checks.
 3. **Approve plan & build.** Amalgam downloads every file, runs each FOMOD installer and fills in the options from
    what the models suggested, your earlier choices, and the other mods in the pack (patches for mods you have are
    picked automatically). If an installer has a real choice nobody made, it waits for you: press **Pick options**,
-   choose, and later steps update as you go. Then it checks masters and the plugin limit, works out a load order,
-   and reports problems to the chat, so the models can fix them.
+   choose, and later steps update as you go. Then it checks the pack for that game, works out a load order, and
+   reports problems to the chat, so the models can fix them:
+   - **Skyrim:** missing masters, old-format (LE) plugins, the plugin limit.
+   - **Baldur's Gate 3:** reads each .pak's mod info for missing dependencies; flags mods that need Script Extender.
+   - **Cyberpunk 2077:** missing frameworks (RED4ext, CET, redscript, ArchiveXL, TweakXL, Codeware), files in the
+     wrong folder, two mods shipping the same archive.
+   - **The Witcher 3:** mods editing the same script (merge them with Script Merger), badly named mod folders, menus
+     that need adding to the file list.
+   - **Mass Effect LE:** two mods installing the same DLC folder, missing required DLC mods, texture packs last.
 4. Everything lands in `<Mod Forge folder>\<game>\<modpack>\`: one numbered archive per mod (installer choices
-   already applied, so they install without questions), `Load order.txt` and `Install guide.md`. Drag them into
-   Vortex or Mod Organizer 2.
-5. **I've installed it:** the models check the setup, sort with LOOT and clean plugins with xEdit. Because you
-   approved the plan, LOOT and xEdit run without asking in that modpack (nothing else does). Changing the mod list
-   needs your approval again; installer-option suggestions don't.
+   already applied, so they install without questions), `Load order.txt` and `Install guide.md` with steps for
+   that game's usual manager (Vortex or Mod Organizer 2; BG3 Mod Manager; ME3Tweaks Mod Manager for Mass Effect).
+5. **I've installed it:** the models check the setup. For Skyrim they also sort with LOOT and clean plugins with
+   xEdit; because you approved the plan, LOOT and xEdit run without asking in that modpack (nothing else does). For
+   the other games they go through the game's logs and load order with you. Changing the mod list needs your
+   approval again; installer-option suggestions don't.
 
 The models' own patches and tweaks go in the modpack's `Patches` folder and are packed as the last mod. Downloads
 are kept in `<game>\.downloads`, so rebuilding doesn't download again. Modpack folders are never synced.

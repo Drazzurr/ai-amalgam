@@ -22,12 +22,12 @@ import time
 import zipfile
 
 from . import archives, fomod
+from .games import PROFILES, present_from_files, profile
 from .nexus import GAME_DOMAINS, Nexus, NexusError, mod_url
 
-GAMES = {"Skyrim Special Edition": {"label": "Skyrim Special Edition / Anniversary Edition", "plugins": True,
-                                    "base": ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"]}}
+GAMES = {g: {"label": pr.label} for g, pr in PROFILES.items()}
 PLUGIN_EXT = (".esp", ".esm", ".esl")
-TOOL_EXES = {"loot.exe", "sseedit.exe", "sseedit64.exe", "xedit.exe", "xedit64.exe", "tes5edit.exe"}
+MAX_FILES = 8000             # per mod, for checks (huge texture packs list far more; the checks don't need them all)
 NEXUS_RE = re.compile(r"^\W*NEXUS\s*:\s*(.+?)\s*$")
 PLAN_RE = re.compile(r"^\W*PLAN\s*:\s*(.+?)\s*$")
 MAX_LINES = 6
@@ -40,17 +40,18 @@ Goal: a stable, working mod list that matches what the user wants. Ask the user 
 Tools: put lines just above your last line (up to {max} in all). The app runs them right away and you get the results straight after:
 NEXUS: search <words> (find mods on Nexus) · NEXUS: mod <id> (description and listed requirements) · NEXUS: files <id> (the files on the page)
 PLAN: add <mod id> [file <file id>] | <why> · PLAN: remove <mod id> · PLAN: move <mod id> after <mod id> (or before) · PLAN: choose <mod id> <installer option>[; <option>] (which FOMOD options to pick, e.g. "PLAN: choose 12345 3BA; Immersive Armors patch")
-Rules for a stable list: look at a mod (NEXUS: mod) before adding it and add its requirements too; plan order = install order (frameworks and requirements first, then big mods, then their patches; later mods overwrite earlier ones); only Skyrim SE/AE versions; with no "file" the main file is used, so name the file when a mod has several main files (e.g. for game versions or body types); add patches for mods that conflict; don't add two mods that do the same job. Leave anything a FOMOD installer covers to the installer (say which options with PLAN: choose).
-Here the Mod Forge downloads the files with the user's Nexus account once they approve the plan, so don't send them to download mods by hand. When the plan is ready, ask the user to press "Approve plan & build" in the Mod Forge. The build downloads and installs everything into ready-to-install files and reports problems (missing masters, etc.) here; fix them with PLAN lines (a changed plan needs the user's approval again).
-Your own patches or tweaks go in the Patches folder of the code folder (Data layout); they're packed as the last mod.
-After the user installs the pack: check it with MODS: check, sort with LOOT and clean plugins with xEdit using RUN lines (MODS: tools gives the exact commands).{tools_note}
+Rules for a stable list: look at a mod (NEXUS: mod) before adding it and add its requirements too; plan order = install order (frameworks and requirements first, then big mods, then their patches; later mods overwrite earlier ones); with no "file" the main file is used, so name the file when a mod has several main files (e.g. for game versions or options); leave anything an installer (FOMOD) covers to the installer (say which options with PLAN: choose).
+For {game}: {rules}
+Here the Mod Forge downloads the files with the user's Nexus account once they approve the plan, so don't send them to download mods by hand. When the plan is ready, ask the user to press "Approve plan & build" in the Mod Forge. The build downloads and installs everything into ready-to-install files and reports problems (missing requirements, conflicts, etc.) here; fix them with PLAN lines (a changed plan needs the user's approval again).
+Your own patches or tweaks go in the Patches folder of the code folder (laid out the way the game expects); they're packed as the last mod.
+{after}{tools_note}
 Current plan ({count} mods, {approval}):
 {plan}
 {build}"""
 
 MOD_LINE = """
 === MOD FORGE: MOD WORKSHOP ===
-This project is "{name}", an original mod for {game} that you're developing with the user. The code folder is the mod itself, laid out like the game's Data folder (plugins at the top, meshes/, textures/, scripts/ and so on), so files you make there are the mod.
+This project is "{name}", an original mod for {game} that you're developing with the user. The code folder is the mod itself, {layout}, so files you make there are the mod.
 Read the game's own files (READ) to match its records, meshes and scripts. Keep work files (.blend, .psd, notes) in a "Source" folder. The user can check and package the mod with the Package mod button in the Code tab.
 """
 
@@ -67,6 +68,13 @@ def _strip_bbcode(text):
     for a, b in (("&quot;", '"'), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&#39;", "'"), ("&nbsp;", " ")):
         text = text.replace(a, b)
     return re.sub(r"\n\s*\n\s*\n+", "\n\n", text).strip()
+
+
+def _read_file(path, limit=None):
+    if not path:
+        raise FileNotFoundError("not in the package")
+    with open(path, "rb") as f:
+        return f.read(limit) if limit else f.read()
 
 
 def _plugin_info(data):
@@ -132,7 +140,7 @@ class Forge:
 
     def _game(self, game):
         if game not in GAMES:
-            raise ValueError("The Mod Forge does Skyrim Special Edition / Anniversary Edition for now.")
+            raise ValueError("The Mod Forge does " + ", ".join(GAMES) + ".")
         return game
 
     def _unique(self, parent, name):
@@ -200,7 +208,8 @@ class Forge:
         if not it:
             return ""
         if it["kind"] == "mod":
-            return MOD_LINE.format(name=it["name"], game=GAMES.get(it["game"], {}).get("label", it["game"]))
+            pr = profile(it["game"])
+            return MOD_LINE.format(name=it["name"], game=pr.label, layout=pr.workshop)
         acc = self.account()
         account = (f"Nexus Mods is connected ({acc['name'] or 'account'}, {'Premium' if acc['premium'] else 'NOT Premium: downloads will fail'})."
                    if acc["connected"] else "Nexus Mods isn't connected yet: NEXUS lines won't work until the user adds their API key in the Mod Forge.")
@@ -213,11 +222,16 @@ class Forge:
         need = [m for m in st.get("mods", {}).values() if m.get("status") == "needs_you"]
         if need:
             build += "\nWaiting for the user's installer choices: " + ", ".join(m.get("name", "?") for m in need)
-        return PACK_LINE.format(name=it["name"], game=GAMES[it["game"]]["label"], account=account, max=MAX_LINES,
+        pr = profile(it["game"])
+        after = ("After the user installs the pack: check it with MODS: check, sort with LOOT and clean plugins with xEdit "
+                 "using RUN lines (MODS: tools gives the exact commands)." if pr.tools else
+                 "After the user installs the pack, help them check it: say what to look at in-game and which log files "
+                 "to send if something doesn't load.")
+        return PACK_LINE.format(name=it["name"], game=pr.label, account=account, max=MAX_LINES, rules=pr.rules, after=after,
                                 count=len(it["plan"]), plan=plan, build=build,
                                 approval="approved by the user" if it["approved"] else "not approved yet",
                                 tools_note=(" The user approved the plan, so those LOOT and xEdit commands run without asking."
-                                            if it["approved"] else ""))
+                                            if it["approved"] and pr.tools else ""))
 
     @staticmethod
     def _plan_line(n, m, it):
@@ -378,7 +392,7 @@ class Forge:
         exe = next((g for g in (m.groups() if m else ()) if g), "")
         if re.search(r"[;|`]|&&|\|\||\$\(", cmd[len(exe) + 2:]):      # nothing chained after the tool
             return False
-        return os.path.basename(exe.replace("\\", "/")).lower() in TOOL_EXES
+        return os.path.basename(exe.replace("\\", "/")).lower() in profile(it["game"]).tools
 
     # ----- FOMOD choices -----
 
@@ -436,9 +450,9 @@ class Forge:
         return os.path.join(self.root(), game, ".downloads")
 
     def _present(self, it):
-        names = {n.lower() for n in GAMES[it["game"]]["base"]}
+        names = {n.lower() for n in getattr(profile(it["game"]), "base", [])}
         for ms in it["state"].get("mods", {}).values():
-            names |= {p.lower() for p in ms.get("plugins", [])}
+            names |= present_from_files(ms.get("files") or [])
         return names
 
     @staticmethod
@@ -455,24 +469,6 @@ class Forge:
         if not cfg:
             return None, None
         return fomod.Fomod(archives.read(archive, cfg), base, archives.read(archive, info) if info else None), base
-
-    @staticmethod
-    def _data_root(names):
-        """The folder inside an archive that maps to Data (handles a Data/ folder or a single wrapper folder)."""
-        data_like = {"meshes", "textures", "scripts", "interface", "sound", "skse", "seq", "music", "strings",
-                     "materials", "lodsettings", "grass", "shadersfx", "calientetools", "netscriptframework", "video"}
-        tops = {n.split("/")[0] for n in names}
-        if any(n.lower().endswith(PLUGIN_EXT) and "/" not in n for n in names) or {t.lower() for t in tops} & data_like:
-            return ""
-        if len(tops) == 1:
-            t = next(iter(tops))
-            inner = [n[len(t) + 1:] for n in names if n.startswith(t + "/")]
-            sub = Forge._data_root(inner)
-            return t + ("/" + sub if sub else "") if inner else ""
-        for n in names:
-            if n.lower().startswith("data/"):
-                return n.split("/")[0]
-        return ""
 
     def start_build(self, item_id):
         it = self.store.forge_item(item_id)
@@ -505,6 +501,7 @@ class Forge:
         st = it["state"]
         mods = st.setdefault("mods", {})
         problems = []
+        game = profile(it["game"])
         try:
             nx = self.nexus()
             domain = GAME_DOMAINS[it["game"]]
@@ -547,11 +544,10 @@ class Forge:
                     names = archives.names(ms["archive"])
                     cfg, base, _info = fomod.find_config(names)
                     ms["fomod"] = bool(cfg)
-                    root = (base if cfg else self._data_root(names))
+                    root = (base if cfg else game.data_root(names))
                     pre = (root + "/") if root else ""
                     if not cfg:
-                        ms["plugins"] = [n[len(pre):] for n in names if n.startswith(pre) and "/" not in n[len(pre):]
-                                         and n.lower().endswith(PLUGIN_EXT)]
+                        ms["files"] = [n[len(pre):] for n in names if n.startswith(pre)][:MAX_FILES]
                     info[pm["mod_id"]] = (names, cfg, base, root)
                 except archives.ArchiveError as e:
                     ms.update({"status": "error", "error": str(e)})
@@ -567,9 +563,8 @@ class Forge:
                     f, base = self._load_fomod(ms["archive"])
                     r = f.resolve(ms.get("choices") or None, pm.get("hints", []), self._state_fn(present))
                     resolved[pm["mod_id"]] = (f, base, r)
-                    plug = [d for _s, d, _isf, _p in f.install_list(r, self._state_fn(present)) if d.lower().endswith(PLUGIN_EXT)]
-                    ms["plugins"] = [p for p in plug if "/" not in p]
-                    present |= {p.lower() for p in ms["plugins"]}
+                    ms["files"] = [d for _s, d, _isf, _p in f.install_list(r, self._state_fn(present))][:MAX_FILES]
+                    present |= present_from_files(ms["files"])
             # 4. make the packages
             folder = it["folder"]
             os.makedirs(folder, exist_ok=True)
@@ -605,44 +600,42 @@ class Forge:
                     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
                         for dest, src in sorted(files.items()):
                             z.write(src, dest)
-                    masters = self._masters_from_files({d: s for d, s in files.items() if d.lower().endswith(PLUGIN_EXT) and "/" not in d})
+                    ms["files"] = sorted(files)[:MAX_FILES]
+                    ms["info"] = self._inspect(game, ms["files"], lambda rel, lim=None: _read_file(files.get(rel), lim))
                     shutil.rmtree(work, ignore_errors=True)
-                    ms.update({"status": "ready", "out": os.path.basename(out), "needs_you": 0, "masters": masters,
-                               "plugins": sorted(masters)})
+                    ms.update({"status": "ready", "out": os.path.basename(out), "needs_you": 0})
                 else:
                     ext = os.path.splitext(ms["archive"])[1].lower() or ".zip"
                     out = os.path.join(folder, stem + ext)
                     shutil.copyfile(ms["archive"], out)
                     names, _cfg, _base, root = info[pm["mod_id"]]
                     pre = (root + "/") if root else ""
-                    masters = {}
-                    for p in ms.get("plugins", []):
-                        try:
-                            masters[p] = _plugin_info(archives.read(ms["archive"], pre + p, limit=262144))
-                        except Exception:
-                            masters[p] = ([], False, False, 0)
-                    ms.update({"status": "ready", "out": os.path.basename(out), "masters": masters})
+                    arc = ms["archive"]
+                    ms["info"] = self._inspect(game, ms.get("files") or [],
+                                               lambda rel, lim=None, arc=arc, pre=pre: archives.read(arc, pre + rel, limit=lim))
+                    ms.update({"status": "ready", "out": os.path.basename(out)})
                 self.store.forge_update(item_id, state=st)
             # our own patches
             patches = os.path.join(folder, "Patches")
             pfiles = [os.path.join(dp, f) for dp, _d, fs in os.walk(patches) for f in fs] if os.path.isdir(patches) else []
-            pmasters = {}
+            checked = [(pm["name"], mods.get(str(pm["mod_id"]), {}).get("info") or {}) for pm in it["plan"]
+                       if mods.get(str(pm["mod_id"]), {}).get("status") == "ready"]
             if pfiles:
                 n += 1
                 out = os.path.join(folder, f"{n:02d} - {_safe(it['name'])} Patches.zip")
+                rels = {}
                 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
                     for full in pfiles:
                         rel = os.path.relpath(full, patches).replace("\\", "/")
                         z.write(full, rel)
-                        if "/" not in rel and rel.lower().endswith(PLUGIN_EXT):
-                            with open(full, "rb") as fh:
-                                pmasters[rel] = _plugin_info(fh.read(262144))
-            # 5. masters and load order
-            order, more = self._load_order(it, mods, pmasters)
+                        rels[rel] = full
+                checked.append(("your patches", self._inspect(game, sorted(rels), lambda rel, lim=None: _read_file(rels.get(rel), lim))))
+            # 5. requirements, conflicts and load order, the game's way
+            order, more, notes = game.check(checked)
             problems += more
             waiting = [m["name"] for m in mods.values() if m.get("status") == "needs_you"]
-            self._write_guide(it, mods, order, problems, waiting)
-            st.update({"problems": problems, "load_order": order, "built_at": time.time(),
+            self._write_guide(it, mods, order, problems, waiting, notes)
+            st.update({"problems": problems, "notes": notes, "load_order": order, "built_at": time.time(),
                        "stage": "needs_you" if waiting else ("problems" if problems else "built")})
             self.store.forge_update(item_id, state=st)
             self._report(it, st, waiting)
@@ -656,71 +649,20 @@ class Forge:
             self._set(item_id, running=False, stage="")
 
     @staticmethod
-    def _masters_from_files(files):
-        out = {}
-        for dest, src in files.items():
-            try:
-                with open(src, "rb") as fh:
-                    out[dest] = _plugin_info(fh.read(262144))
-            except OSError:
-                out[dest] = ([], False, False, 0)
-        return out
+    def _inspect(game, files, read):
+        try:
+            return game.inspect({"files": files, "read": read})
+        except Exception as e:
+            return {"error": str(e)}
 
-    def _load_order(self, it, mods, extra):
-        base = GAMES[it["game"]]["base"]
-        info, owner = {}, {}
-        for pm in it["plan"]:
-            ms = mods.get(str(pm["mod_id"]), {})
-            for p, v in (ms.get("masters") or {}).items():
-                info[p] = v
-                owner[p.lower()] = pm["name"]
-        for p, v in extra.items():
-            info[p] = v
-            owner[p.lower()] = "your patches"
-        have = {b.lower() for b in base} | {p.lower() for p in info}
-        problems = []
-        for p, (masters, _m, _l, form) in info.items():
-            miss = [m for m in masters if m.lower() not in have]
-            for m in miss:
-                hint = " (Creation Club / Anniversary content)" if m.lower().startswith("cc") else ""
-                problems.append(f"{p} ({owner[p.lower()]}) needs {m}{hint}, which isn't in the pack or the base game.")
-            if form and form < 44 and p.lower().endswith((".esp", ".esm")):
-                problems.append(f"{p} ({owner[p.lower()]}) is a Skyrim LE (Oldrim) plugin; it needs converting for SE/AE.")
-        # masters first, then plan order; master-flagged files before normal ones
-        names = list(info)
-        rank = {p: i for i, p in enumerate(names)}
-        heavy = lambda p: 0 if (p.lower().endswith(".esm") or info[p][1]) else 1
-        done, order, visiting = set(), [], set()
-
-        def visit(p):
-            if p.lower() in done or p.lower() in visiting:
-                return
-            visiting.add(p.lower())
-            for m in info[p][0]:
-                real = next((q for q in names if q.lower() == m.lower()), None)
-                if real:
-                    visit(real)
-            visiting.discard(p.lower())
-            done.add(p.lower())
-            order.append(p)
-        for p in sorted(names, key=lambda p: (heavy(p), rank[p])):
-            visit(p)
-        full = [p for p in order if not info[p][2] and not p.lower().endswith(".esl")]
-        if len(full) + 5 > 254:
-            problems.append(f"{len(full)} full plugins: over Skyrim's limit of 254 (with the base game). Make some light (ESL) or merge them.")
-        return order, problems
-
-    def _write_guide(self, it, mods, order, problems, waiting):
-        folder, domain = it["folder"], GAME_DOMAINS[it["game"]]
-        with open(os.path.join(folder, "Load order.txt"), "w", encoding="utf-8") as f:
-            f.write("# Load order for this modpack (plugins.txt format). Vortex and LOOT sort automatically;\n"
-                    "# in Mod Organizer 2 you can match this order in the right-hand Plugins list.\n")
-            for p in order:
-                f.write(f"*{p}\n")
-        lines = [f"# {it['name']}", "", f"Modpack for {GAMES[it['game']]['label']}, built by AI Amalgam's Mod Forge on "
-                 f"{time.strftime('%Y-%m-%d %H:%M')}.", "",
-                 "## Install", "Install the numbered files in order (drag them all into Vortex or Mod Organizer 2). Installer "
-                 "choices are already applied, so they install without questions. Later files overwrite earlier ones.", ""]
+    def _write_guide(self, it, mods, order, problems, waiting, notes=()):
+        folder, domain, game = it["folder"], GAME_DOMAINS[it["game"]], profile(it["game"])
+        lo = game.load_order_file(order)
+        if lo:
+            with open(os.path.join(folder, "Load order.txt"), "w", encoding="utf-8") as f:
+                f.write(lo)
+        lines = [f"# {it['name']}", "", f"Modpack for {game.label}, built by AI Amalgam's Mod Forge on "
+                 f"{time.strftime('%Y-%m-%d %H:%M')}.", "", "## Install", game.install_steps(), ""]
         for i, pm in enumerate(it["plan"], 1):
             ms = mods.get(str(pm["mod_id"]), {})
             stt = {"ready": ms.get("out", ""), "needs_you": "waiting for your installer choices",
@@ -734,9 +676,12 @@ class Forge:
                 lines.append(f"   - Why: {pm['why']}")
         if problems:
             lines += ["", "## Problems found", *[f"- {p}" for p in problems]]
+        if notes:
+            lines += ["", "## Good to know", *[f"- {x}" for x in notes]]
         if waiting:
             lines += ["", "## Waiting for you", "Pick the installer options in the Mod Forge for: " + ", ".join(waiting)]
-        lines += ["", "## Load order", "See Load order.txt.", ""]
+        if lo:
+            lines += ["", "## Load order", "See Load order.txt.", ""]
         with open(os.path.join(folder, "Install guide.md"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
@@ -751,8 +696,11 @@ class Forge:
         if st["problems"]:
             text += ["Problems:"] + [f"- {p}" for p in st["problems"]]
         else:
-            text.append("No missing masters or other problems found.")
-        text.append(f"Load order ({len(st['load_order'])} plugins): " + ", ".join(st["load_order"][:80]))
+            text.append("No missing requirements or other problems found.")
+        if st.get("notes"):
+            text += ["Good to know:"] + [f"- {x}" for x in st["notes"][:15]]
+        if st["load_order"]:
+            text.append(f"Load order ({len(st['load_order'])}): " + ", ".join(st["load_order"][:80]))
         self.post(chat, "Mod Forge", "output", "\n".join(text))
 
     def status(self, item_id):
@@ -772,5 +720,8 @@ class Forge:
                 "exists": it["exists"], "project_id": it["project_id"], "chat_id": it["chat_id"], "approved": it["approved"],
                 "stage": st.get("stage", "planning"), "problems": st.get("problems", []), "error": st.get("error", ""),
                 "load_order": st.get("load_order", []), "built_at": st.get("built_at"), "mods": mods,
+                "notes": st.get("notes", []), "tools": bool(profile(it["game"]).tools),
+                "install_hint": profile(it["game"]).install_steps(), "after_hint": profile(it["game"]).after_install_hint,
+                "after_install": profile(it["game"]).after_install,
                 "live": {k: v for k, v in (self.jobs.get(item_id) or {}).items() if k != "stop"},
                 "plan_hash": hashlib.md5(json.dumps(it["plan"], sort_keys=True).encode()).hexdigest()[:10]}
